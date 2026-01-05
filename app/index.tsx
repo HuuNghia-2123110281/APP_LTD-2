@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { 
   StyleSheet, Text, View, FlatList, Image, 
-  TouchableOpacity, SafeAreaView, ActivityIndicator, StatusBar 
+  TouchableOpacity, SafeAreaView, ActivityIndicator, StatusBar, Alert, Platform 
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function App() {
-  // Khai báo kiểu dữ liệu là 'any' để tránh lỗi TypeScript
   const [products, setProducts] = useState<any[]>([]);
   const [isLoading, setLoading] = useState(true);
 
-  // === CẤU HÌNH IP  ===
-  const API_URL = 'http://192.168.100.118:8080/api/products'; 
+  // === CẤU HÌNH IP (Sửa lại số IP máy bạn) ===
+  const BASE_URL = 'http://172.20.10.2:8080'; 
+  const API_URL = `${BASE_URL}/api/products`;
+  const CART_API_URL = `${BASE_URL}/api/cart/add`;
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
@@ -30,6 +32,25 @@ export default function App() {
     }
   };
 
+  // === HÀM THÊM VÀO GIỎ ===
+  const handleAddToCart = async (product: any) => {
+    try {
+      const response = await fetch(CART_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(product),
+      });
+
+      if (response.ok) {
+        Alert.alert("Thành công", `Đã thêm "${product.name}" vào giỏ!`);
+      } else {
+        Alert.alert("Lỗi", "Không thêm được vào giỏ hàng");
+      }
+    } catch (error) {
+      Alert.alert("Lỗi mạng", "Kiểm tra kết nối Server");
+    }
+  };
+
   useEffect(() => {
     fetchProducts();
   }, []);
@@ -42,9 +63,7 @@ export default function App() {
           style={styles.productImage} 
           resizeMode="contain"
         />
-        <View style={styles.tagContainer}>
-           <Text style={styles.tagText}>Sale</Text>
-        </View>
+        <View style={styles.tagContainer}><Text style={styles.tagText}>Sale</Text></View>
       </View>
 
       <View style={styles.infoContainer}>
@@ -61,7 +80,8 @@ export default function App() {
           <Text style={styles.sold}>Đã bán {item.sold}</Text>
         </View>
 
-        <TouchableOpacity style={styles.addButton}>
+        {/* Nút THÊM VÀO GIỎ */}
+        <TouchableOpacity style={styles.addButton} onPress={() => handleAddToCart(item)}>
           <Text style={styles.addButtonText}>Thêm vào giỏ</Text>
         </TouchableOpacity>
       </View>
@@ -79,7 +99,6 @@ export default function App() {
       {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#2979ff" />
-          <Text style={{color: 'white', marginTop: 10}}>Đang tải dữ liệu từ Server...</Text>
         </View>
       ) : (
         <FlatList
@@ -94,7 +113,7 @@ export default function App() {
   );
 }
 
-// === STYLE (Giữ nguyên) ===
+// GIỮ NGUYÊN STYLE CŨ
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#121212' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
