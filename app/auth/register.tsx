@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -12,13 +14,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import ApiService from '../services/api';
 
-interface RegisterFormProps {
-  onNavigateToLogin: () => void;
-  onRegisterSuccess: () => void;
-}
-
-export default function RegisterForm({ onNavigateToLogin, onRegisterSuccess }: RegisterFormProps) {
+export default function RegisterScreen() {
+  const router = useRouter();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -26,6 +25,7 @@ export default function RegisterForm({ onNavigateToLogin, onRegisterSuccess }: R
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({
     fullName: '',
     email: '',
@@ -88,19 +88,36 @@ export default function RegisterForm({ onNavigateToLogin, onRegisterSuccess }: R
     return isValid;
   };
 
-  const handleRegister = () => {
-    if (validateForm()) {
-      // Tạm thời không gọi API, chỉ thông báo thành công
+  const handleRegister = async () => {
+    if (!validateForm()) return;
+
+    setLoading(true);
+    try {
+      await ApiService.register({
+        fullName,
+        email,
+        password,
+      });
+
+      // Đăng ký thành công
       Alert.alert(
         'Đăng ký thành công!',
         `Chào mừng ${fullName} đến với NghiaShop`,
         [
           {
             text: 'OK',
-            onPress: () => onRegisterSuccess(),
+            onPress: () => router.replace('/auth/login'),
           },
         ]
       );
+    } catch (error) {
+      // Hiển thị lỗi
+      Alert.alert(
+        'Đăng ký thất bại',
+        error instanceof Error ? error.message : 'Có lỗi xảy ra, vui lòng thử lại'
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -113,7 +130,11 @@ export default function RegisterForm({ onNavigateToLogin, onRegisterSuccess }: R
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={onNavigateToLogin}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => router.back()}
+              disabled={loading}
+            >
               <Ionicons name="chevron-back" size={26} color="#888" />
             </TouchableOpacity>
             <View style={styles.logoContainer}>
@@ -137,6 +158,7 @@ export default function RegisterForm({ onNavigateToLogin, onRegisterSuccess }: R
                   value={fullName}
                   onChangeText={setFullName}
                   autoCapitalize="words"
+                  editable={!loading}
                 />
               </View>
               {errors.fullName ? <Text style={styles.errorText}>{errors.fullName}</Text> : null}
@@ -156,6 +178,7 @@ export default function RegisterForm({ onNavigateToLogin, onRegisterSuccess }: R
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  editable={!loading}
                 />
               </View>
               {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
@@ -173,6 +196,7 @@ export default function RegisterForm({ onNavigateToLogin, onRegisterSuccess }: R
                   value={phone}
                   onChangeText={setPhone}
                   keyboardType="phone-pad"
+                  editable={!loading}
                 />
               </View>
               {errors.phone ? <Text style={styles.errorText}>{errors.phone}</Text> : null}
@@ -191,8 +215,9 @@ export default function RegisterForm({ onNavigateToLogin, onRegisterSuccess }: R
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
+                  editable={!loading}
                 />
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} disabled={loading}>
                   <Ionicons
                     name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                     size={20}
@@ -216,8 +241,9 @@ export default function RegisterForm({ onNavigateToLogin, onRegisterSuccess }: R
                   onChangeText={setConfirmPassword}
                   secureTextEntry={!showConfirmPassword}
                   autoCapitalize="none"
+                  editable={!loading}
                 />
-                <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+                <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} disabled={loading}>
                   <Ionicons
                     name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
                     size={20}
@@ -229,14 +255,22 @@ export default function RegisterForm({ onNavigateToLogin, onRegisterSuccess }: R
             </View>
 
             {/* Register Button */}
-            <TouchableOpacity style={styles.registerButton} onPress={handleRegister}>
-              <Text style={styles.registerButtonText}>Đăng ký</Text>
+            <TouchableOpacity
+              style={[styles.registerButton, loading && styles.registerButtonDisabled]}
+              onPress={handleRegister}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#121212" />
+              ) : (
+                <Text style={styles.registerButtonText}>Đăng ký</Text>
+              )}
             </TouchableOpacity>
 
             {/* Login Link */}
             <View style={styles.loginContainer}>
               <Text style={styles.loginText}>Đã có tài khoản? </Text>
-              <TouchableOpacity onPress={onNavigateToLogin}>
+              <TouchableOpacity onPress={() => router.push('/auth/login')} disabled={loading}>
                 <Text style={styles.loginLink}>Đăng nhập ngay</Text>
               </TouchableOpacity>
             </View>
@@ -340,6 +374,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 10,
+  },
+  registerButtonDisabled: {
+    opacity: 0.6,
   },
   registerButtonText: {
     color: '#121212',

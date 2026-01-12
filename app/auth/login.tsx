@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -12,16 +14,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import ApiService from '../services/api';
 
-interface LoginFormProps {
-  onNavigateToRegister: () => void;
-  onLoginSuccess: () => void;
-}
-
-export default function LoginForm({ onNavigateToRegister, onLoginSuccess }: LoginFormProps) {
+export default function LoginScreen() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({ email: '', password: '' });
 
   const validateForm = (): boolean => {
@@ -48,19 +48,35 @@ export default function LoginForm({ onNavigateToRegister, onLoginSuccess }: Logi
     return isValid;
   };
 
-  const handleLogin = () => {
-    if (validateForm()) {
-      // Tạm thời không gọi API, chỉ thông báo thành công
+  const handleLogin = async () => {
+    if (!validateForm()) return;
+
+    setLoading(true);
+    try {
+      const response = await ApiService.login({
+        email,
+        password,
+      });
+
+      // Đăng nhập thành công
       Alert.alert(
-        'Đăng nhập thành công!',
-        `Chào mừng ${email}`,
+        'Thành công!',
+        'Đăng nhập thành công',
         [
           {
             text: 'OK',
-            onPress: () => onLoginSuccess(),
+            onPress: () => router.replace('/(tabs)/home'),
           },
         ]
       );
+    } catch (error) {
+      // Hiển thị lỗi
+      Alert.alert(
+        'Đăng nhập thất bại',
+        error instanceof Error ? error.message : 'Có lỗi xảy ra, vui lòng thử lại'
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -96,6 +112,7 @@ export default function LoginForm({ onNavigateToRegister, onLoginSuccess }: Logi
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  editable={!loading}
                 />
               </View>
               {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
@@ -114,8 +131,9 @@ export default function LoginForm({ onNavigateToRegister, onLoginSuccess }: Logi
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
+                  editable={!loading}
                 />
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} disabled={loading}>
                   <Ionicons
                     name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                     size={20}
@@ -127,13 +145,25 @@ export default function LoginForm({ onNavigateToRegister, onLoginSuccess }: Logi
             </View>
 
             {/* Forgot Password */}
-            <TouchableOpacity style={styles.forgotPassword}>
+            <TouchableOpacity
+              style={styles.forgotPassword}
+              onPress={() => router.push('/auth/forgotPasswordScreen')}
+              disabled={loading}
+            >
               <Text style={styles.forgotPasswordText}>Quên mật khẩu?</Text>
             </TouchableOpacity>
 
             {/* Login Button */}
-            <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-              <Text style={styles.loginButtonText}>Đăng nhập</Text>
+            <TouchableOpacity
+              style={[styles.loginButton, loading && styles.loginButtonDisabled]}
+              onPress={handleLogin}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.loginButtonText}>Đăng nhập</Text>
+              )}
             </TouchableOpacity>
 
             {/* Divider */}
@@ -145,13 +175,13 @@ export default function LoginForm({ onNavigateToRegister, onLoginSuccess }: Logi
 
             {/* Social Login */}
             <View style={styles.socialContainer}>
-              <TouchableOpacity style={styles.socialButton}>
+              <TouchableOpacity style={styles.socialButton} disabled={loading}>
                 <Ionicons name="logo-google" size={22} color="#fff" />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.socialButton}>
+              <TouchableOpacity style={styles.socialButton} disabled={loading}>
                 <Ionicons name="logo-facebook" size={22} color="#fff" />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.socialButton}>
+              <TouchableOpacity style={styles.socialButton} disabled={loading}>
                 <Ionicons name="logo-apple" size={22} color="#fff" />
               </TouchableOpacity>
             </View>
@@ -159,7 +189,7 @@ export default function LoginForm({ onNavigateToRegister, onLoginSuccess }: Logi
             {/* Register Link */}
             <View style={styles.registerContainer}>
               <Text style={styles.registerText}>Chưa có tài khoản? </Text>
-              <TouchableOpacity onPress={onNavigateToRegister}>
+              <TouchableOpacity onPress={() => router.push('/auth/register')} disabled={loading}>
                 <Text style={styles.registerLink}>Đăng ký ngay</Text>
               </TouchableOpacity>
             </View>
@@ -266,6 +296,9 @@ const styles = StyleSheet.create({
     height: 52,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  loginButtonDisabled: {
+    opacity: 0.6,
   },
   loginButtonText: {
     color: '#fff',
