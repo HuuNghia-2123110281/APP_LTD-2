@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
+    ActivityIndicator,
     Alert,
     FlatList,
     SafeAreaView,
@@ -12,50 +12,63 @@ import {
     View
 } from 'react-native';
 
-interface Address {
-    id: string;
-    receiverName: string;
-    phone: string;
-    address: string;
-    isDefault: boolean;
-}
+// Import ApiService và Interface Address từ file api của bạn
+// Lưu ý: Đảm bảo đường dẫn import đúng với cấu trúc thư mục của bạn
+import ApiService, { Address } from '../services/api';
 
 export default function AddressListScreen() {
     const router = useRouter();
     const [addresses, setAddresses] = useState<Address[]>([]);
+    const [loading, setLoading] = useState(true);
 
+    // Hàm load địa chỉ từ API
     const loadAddresses = async () => {
         try {
-            const data = await AsyncStorage.getItem('addresses');
-            if (data) {
-                setAddresses(JSON.parse(data));
-            }
+            setLoading(true);
+            const data = await ApiService.getAddresses();
+            setAddresses(data);
         } catch (error) {
             console.error('Error loading addresses:', error);
+            // Có thể hiển thị Alert lỗi nếu cần
+        } finally {
+            setLoading(false);
         }
     };
 
+    // Reload khi màn hình được focus
     useFocusEffect(
         useCallback(() => {
             loadAddresses();
         }, [])
     );
 
-    const handleSetDefault = async (id: string) => {
+    const handleSetDefault = async (item: Address) => {
         try {
-            const updated = addresses.map(addr => ({
-                ...addr,
-                isDefault: addr.id === id
-            }));
-            setAddresses(updated);
-            await AsyncStorage.setItem('addresses', JSON.stringify(updated));
+            // Gọi API cập nhật địa chỉ này thành mặc định
+            // Backend cần xử lý logic: khi set 1 cái là true, các cái khác tự động về false
+            // Hoặc ta gửi object update lên
+
+            const updateData = {
+                receiverName: item.receiverName,
+                phone: item.phone,
+                address: item.address,
+                isDefault: true // Set thành true
+            };
+
+            await ApiService.updateAddress(item.id, updateData);
+
             Alert.alert('Thành công', 'Đã đặt làm địa chỉ mặc định');
+
+            // Load lại danh sách để cập nhật giao diện (backend đã xử lý logic đổi default)
+            loadAddresses();
+
         } catch (error) {
             console.error('Error setting default:', error);
+            Alert.alert('Lỗi', 'Không thể đặt mặc định');
         }
     };
 
-    const handleDelete = async (id: string) => {
+    const handleDelete = async (id: number) => {
         Alert.alert(
             'Xác nhận xóa',
             'Bạn có chắc muốn xóa địa chỉ này?',
@@ -66,18 +79,15 @@ export default function AddressListScreen() {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            const updated = addresses.filter(addr => addr.id !== id);
+                            // Gọi API xóa
+                            await ApiService.deleteAddress(id);
 
-                            // Nếu xóa địa chỉ mặc định và còn địa chỉ khác, đặt địa chỉ đầu tiên làm mặc định
-                            if (updated.length > 0 && !updated.some(a => a.isDefault)) {
-                                updated[0].isDefault = true;
-                            }
-
-                            setAddresses(updated);
-                            await AsyncStorage.setItem('addresses', JSON.stringify(updated));
                             Alert.alert('Thành công', 'Đã xóa địa chỉ');
+                            // Load lại danh sách sau khi xóa
+                            loadAddresses();
                         } catch (error) {
                             console.error('Error deleting address:', error);
+                            Alert.alert('Lỗi', 'Không thể xóa địa chỉ');
                         }
                     }
                 }
@@ -126,13 +136,21 @@ export default function AddressListScreen() {
             {!item.isDefault && (
                 <TouchableOpacity
                     style={styles.setDefaultButton}
-                    onPress={() => handleSetDefault(item.id)}
+                    onPress={() => handleSetDefault(item)}
                 >
                     <Text style={styles.setDefaultText}>Đặt làm mặc định</Text>
                 </TouchableOpacity>
             )}
         </View>
     );
+
+    if (loading && addresses.length === 0) {
+        return (
+            <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <ActivityIndicator size="large" color="#2979ff" />
+            </SafeAreaView>
+        )
+    }
 
     return (
         <SafeAreaView style={styles.container}>
@@ -146,7 +164,8 @@ export default function AddressListScreen() {
 
             <FlatList
                 data={addresses}
-                keyExtractor={(item) => item.id}
+                // Lưu ý: id từ API backend thường là number, chuyển sang string cho keyExtractor
+                keyExtractor={(item) => item.id.toString()}
                 renderItem={renderAddressItem}
                 contentContainerStyle={styles.listContent}
                 ListEmptyComponent={
@@ -211,13 +230,14 @@ const styles = StyleSheet.create({
     addressInfo: {
         flex: 1,
         flexDirection: 'row',
-        alignItems: 'center'
+        alignItems: 'center',
+        flexWrap: 'wrap', // Để tránh bị tràn nếu tên dài
+        gap: 8
     },
     addressName: {
         color: 'white',
         fontSize: 16,
         fontWeight: 'bold',
-        marginRight: 10
     },
     defaultBadge: {
         backgroundColor: '#2979ff',

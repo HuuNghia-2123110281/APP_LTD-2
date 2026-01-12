@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+// Import ApiService
+import ApiService from '../services/api';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -11,9 +12,10 @@ export default function ProfileScreen() {
 
   const checkLoginStatus = async () => {
     try {
-      const token = await AsyncStorage.getItem('userToken');
-      const email = await AsyncStorage.getItem('userEmail');
-      if (token) {
+      // Sử dụng hàm từ ApiService
+      const isAuth = await ApiService.isAuthenticated();
+      if (isAuth) {
+        const email = await ApiService.getUserEmail();
         setIsLoggedIn(true);
         setUserEmail(email || 'Khách hàng');
       } else {
@@ -33,14 +35,13 @@ export default function ProfileScreen() {
 
   const handleLogout = async () => {
     try {
-      await AsyncStorage.removeItem('userToken');
-      await AsyncStorage.removeItem('userEmail');
+      // Gọi logout từ service
+      await ApiService.logout();
 
       setIsLoggedIn(false);
       setUserEmail('');
 
       router.replace('/auth/login');
-
     } catch (error) {
       console.error('Lỗi đăng xuất:', error);
     }
@@ -88,10 +89,7 @@ export default function ProfileScreen() {
         <View style={styles.menuContainer}>
           <TouchableOpacity
             style={styles.menuItem}
-            onPress={() => {
-              // TODO: Tạo màn hình đơn hàng sau
-              console.log('Navigate to orders');
-            }}
+            onPress={() => router.push('/orders/OrdersScreen')}
           >
             <View style={styles.menuIconBox}>
               <Ionicons name="receipt-outline" size={22} color="#2979ff" />
@@ -114,7 +112,7 @@ export default function ProfileScreen() {
           <TouchableOpacity
             style={styles.menuItem}
             onPress={() => {
-              // TODO: Tạo màn hình phương thức thanh toán sau
+              // TODO: Tính năng này làm sau
               console.log('Navigate to payment methods');
             }}
           >
@@ -127,10 +125,7 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.menuItem}
-            onPress={() => {
-              // TODO: Tạo màn hình cài đặt sau
-              console.log('Navigate to settings');
-            }}
+            onPress={() => router.push('/settings/SettingsScreen')}
           >
             <View style={styles.menuIconBox}>
               <Ionicons name="settings-outline" size={22} color="#2979ff" />
@@ -168,7 +163,6 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: 'center'
   },
-
   profileHeader: {
     alignItems: 'center',
     marginBottom: 30,
@@ -203,7 +197,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500'
   },
-
   loginButton: {
     flexDirection: 'row',
     backgroundColor: '#2979ff',
@@ -236,7 +229,6 @@ const styles = StyleSheet.create({
   btnIcon: {
     marginRight: 8
   },
-
   menuContainer: {
     width: '100%',
     backgroundColor: '#1e1e2e',
@@ -269,7 +261,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500'
   },
-
   logoutButton: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255, 82, 82, 0.1)',

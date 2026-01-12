@@ -7,26 +7,27 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#2979ff', 
-        tabBarInactiveTintColor: '#888',  
-        
+        tabBarActiveTintColor: '#2979ff',
+        tabBarInactiveTintColor: '#888',
+
         tabBarStyle: {
-          backgroundColor: '#1e1e1e',     
-          borderTopColor: '#333',         
-          height: Platform.OS === 'ios' ? 85 : 65, 
+          backgroundColor: '#1e1e1e',
+          borderTopColor: '#333',
+          height: Platform.OS === 'ios' ? 85 : 65,
           paddingBottom: Platform.OS === 'ios' ? 25 : 10,
           paddingTop: 5,
         },
-        
+
         headerStyle: { backgroundColor: '#1e1e1e' },
         headerTintColor: 'white',
-        headerShown: false, 
+        headerShown: false,
         tabBarLabelStyle: {
           fontSize: 12,
           fontWeight: '500',
         }
       }}
     >
+      {/* 1. TRANG CHỦ */}
       <Tabs.Screen
         name="home"
         options={{
@@ -37,11 +38,24 @@ export default function TabLayout() {
         }}
       />
 
+      {/* 2. YÊU THÍCH  */}
+      <Tabs.Screen
+        name="favorites"
+        options={{
+          title: 'Yêu thích',
+          headerShown: false, // Ẩn header mặc định để dùng header của trang favorites
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'heart' : 'heart-outline'} size={24} color={color} />
+          ),
+        }}
+      />
+
+      {/* 3. NỔI BẬT */}
       <Tabs.Screen
         name="hot"
         options={{
           title: 'Nổi bật',
-          headerShown: true, // Trang này hiện header đơn giản
+          headerShown: true,
           headerTitle: 'Sản phẩm bán chạy',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'flame' : 'flame-outline'} size={26} color={color} />
@@ -49,7 +63,7 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 3. GIỎ HÀNG (cart.tsx) */}
+      {/* 4. GIỎ HÀNG */}
       <Tabs.Screen
         name="cart"
         options={{
@@ -61,12 +75,12 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 4. TÀI KHOẢN (profile.tsx) */}
+      {/* 5. TÀI KHOẢN */}
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Tài khoản',
-          headerShown: false, // Ẩn header để làm giao diện profile đẹp hơn
+          headerShown: false,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
           ),

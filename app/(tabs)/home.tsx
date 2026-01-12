@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router'; // Thêm useFocusEffect để reload khi quay lại
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -29,10 +29,32 @@ export default function HomeScreen() {
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [addingToCart, setAddingToCart] = useState<number | null>(null);
+
+  // State lưu danh sách sản phẩm yêu thích
+  const [favorites, setFavorites] = useState<Product[]>([]);
 
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  // Reload danh sách yêu thích mỗi khi màn hình Home được focus (quay lại từ tab khác)
+  useFocusEffect(
+    useCallback(() => {
+      loadFavorites();
+    }, [])
+  );
+
+  const loadFavorites = async () => {
+    try {
+      const storedFavs = await AsyncStorage.getItem('favorites');
+      if (storedFavs) {
+        setFavorites(JSON.parse(storedFavs));
+      }
+    } catch (error) {
+      console.error('Error loading favorites:', error);
+    }
+  };
 
   const loadInitialData = async () => {
     try {
@@ -46,6 +68,10 @@ export default function HomeScreen() {
 
       setProducts(cleanProducts);
       setFilteredProducts(cleanProducts);
+
+      // Load favorites lần đầu
+      await loadFavorites();
+
     } catch (error) {
       console.error('Error loading data:', error);
       Alert.alert(
@@ -155,6 +181,27 @@ export default function HomeScreen() {
     }).format(amount);
   };
 
+  // Hàm xử lý khi bấm nút Yêu thích
+  const toggleFavorite = async (item: Product) => {
+    try {
+      let newFavorites = [...favorites];
+      const isExist = newFavorites.some(fav => fav.id === item.id);
+
+      if (isExist) {
+        // Nếu đã có -> Xóa khỏi danh sách
+        newFavorites = newFavorites.filter(fav => fav.id !== item.id);
+      } else {
+        // Chưa có -> Thêm vào danh sách
+        newFavorites.push(item);
+      }
+
+      setFavorites(newFavorites);
+      await AsyncStorage.setItem('favorites', JSON.stringify(newFavorites));
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+    }
+  };
+
   const handleAddToCart = async (item: Product) => {
     const token = await AsyncStorage.getItem('userToken');
 
@@ -174,22 +221,28 @@ export default function HomeScreen() {
     }
 
     try {
-      const existingCart = await AsyncStorage.getItem('cart');
-      const cart = existingCart ? JSON.parse(existingCart) : [];
+      setAddingToCart(item.id);
+      const result: any = await ApiService.addToCart({
+        productId: item.id,
+        quantity: 1
+      });
 
-      const existingIndex = cart.findIndex((cartItem: any) => cartItem.id === item.id);
-
-      if (existingIndex >= 0) {
-        cart[existingIndex].quantity += 1;
+      if (result.cartVerified) {
+        Alert.alert(
+          "✅ Thành công",
+          `Đã thêm "${item.name}" vào giỏ hàng!`,
+        );
       } else {
-        cart.push({ ...item, quantity: 1 });
+        Alert.alert(
+          "⚠️ Đã thêm vào giỏ",
+          `Backend đã xác nhận thêm "${item.name}".`,
+        );
       }
-
-      await AsyncStorage.setItem('cart', JSON.stringify(cart));
-      Alert.alert("Thành công", `Đã thêm "${item.name}" vào giỏ!`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding to cart:', error);
-      Alert.alert("Lỗi", "Không thể thêm vào giỏ hàng");
+      Alert.alert("❌ Lỗi", error.message || "Không thể thêm vào giỏ hàng.");
+    } finally {
+      setAddingToCart(null);
     }
   };
 
@@ -199,6 +252,10 @@ export default function HomeScreen() {
   }) => {
     const [imageError, setImageError] = useState(false);
     const [imageLoading, setImageLoading] = useState(true);
+    const isAddingThisProduct = addingToCart === item.id;
+
+    // Kiểm tra xem sản phẩm này có trong danh sách yêu thích không
+    const isFav = favorites.some(fav => fav.id === item.id);
 
     const hasValidImage = item.image && item.image.trim() !== '';
 
@@ -222,8 +279,7 @@ export default function HomeScreen() {
                 resizeMode="contain"
                 onLoadStart={() => setImageLoading(true)}
                 onLoadEnd={() => setImageLoading(false)}
-                onError={(error) => {
-                  console.log('Image error for:', item.name, error.nativeEvent.error);
+                onError={() => {
                   setImageError(true);
                   setImageLoading(false);
                 }}
@@ -235,6 +291,22 @@ export default function HomeScreen() {
               <Text style={styles.imagePlaceholderText}>Không có ảnh</Text>
             </View>
           )}
+
+          {/* NÚT YÊU THÍCH */}
+          <TouchableOpacity
+            style={styles.favoriteBtn}
+            onPress={(e) => {
+              e.stopPropagation(); // Ngăn chặn bấm vào cả thẻ card
+              toggleFavorite(item);
+            }}
+          >
+            <Ionicons
+              name={isFav ? "heart" : "heart-outline"}
+              size={22}
+              color={isFav ? "#ff5252" : "#888"}
+            />
+          </TouchableOpacity>
+
           {item.stock > 0 ? (
             <View style={styles.tagContainer}>
               <Text style={styles.tagText}>Còn hàng</Text>
@@ -260,16 +332,28 @@ export default function HomeScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.addButton, item.stock <= 0 && styles.addButtonDisabled]}
+            style={[
+              styles.addButton,
+              (item.stock <= 0 || isAddingThisProduct) && styles.addButtonDisabled
+            ]}
             onPress={(e) => {
               e.stopPropagation();
               onAddToCart(item);
             }}
-            disabled={item.stock <= 0}
+            disabled={item.stock <= 0 || isAddingThisProduct}
           >
-            <Text style={styles.addButtonText}>
-              {item.stock > 0 ? 'Thêm vào giỏ' : 'Hết hàng'}
-            </Text>
+            {isAddingThisProduct ? (
+              <View style={styles.addButtonContent}>
+                <ActivityIndicator size="small" color="#fff" />
+                <Text style={[styles.addButtonText, { marginLeft: 8 }]}>
+                  Đang thêm...
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.addButtonText}>
+                {item.stock > 0 ? 'Thêm vào giỏ' : 'Hết hàng'}
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -523,6 +607,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#888'
   },
+
+  // Style cho nút Yêu thích
+  favoriteBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(255,255,255,0.9)', // Nền trắng mờ để nổi bật icon
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3
+  },
+
   tagContainer: {
     position: 'absolute',
     top: 8,
@@ -592,6 +696,11 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
     fontSize: 12
+  },
+  addButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   emptyContainer: {
     alignItems: 'center',

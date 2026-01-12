@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'; // Dùng useFocusEffect
+import React, { useCallback, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -15,21 +14,8 @@ import {
     View
 } from 'react-native';
 
-interface Address {
-    id: string;
-    receiverName: string;
-    phone: string;
-    address: string;
-    isDefault: boolean;
-}
-
-interface CartItem {
-    id: number;
-    name: string;
-    price: number;
-    quantity: number;
-    image: string;
-}
+// Import từ file API
+import ApiService, { Address, CartItem } from './services/api';
 
 export default function CheckoutScreen() {
     const router = useRouter();
@@ -37,39 +23,57 @@ export default function CheckoutScreen() {
 
     const [selectedAddress, setSelectedAddress] = useState<Address | null>(null);
     const [addresses, setAddresses] = useState<Address[]>([]);
+
     const [cartItems, setCartItems] = useState<CartItem[]>([]);
-    const [paymentMethod, setPaymentMethod] = useState('cod'); // cod, bank, momo
+    const [apiTotalPrice, setApiTotalPrice] = useState(0);
+
+    const [paymentMethod, setPaymentMethod] = useState('cod');
     const [loading, setLoading] = useState(true);
     const [showAddressModal, setShowAddressModal] = useState(false);
 
-    useEffect(() => {
-        loadData();
-    }, []);
+    // Sử dụng useFocusEffect để reload khi màn hình được focus (quay lại từ Add Address)
+    useFocusEffect(
+        useCallback(() => {
+            loadData();
+        }, [])
+    );
 
     const loadData = async () => {
         try {
-            setLoading(true);
+            // Chỉ hiện loading lần đầu hoặc khi cần thiết, ở đây mình set nhẹ để UX mượt hơn
+            // setLoading(true); 
 
-            // Load giỏ hàng
-            const cart = await AsyncStorage.getItem('cart');
-            if (cart) {
-                setCartItems(JSON.parse(cart));
+            // 1. LOAD GIỎ HÀNG
+            const cartResponse = await ApiService.getCart();
+            if (cartResponse && cartResponse.items) {
+                setCartItems(cartResponse.items);
+                setApiTotalPrice(cartResponse.totalPrice);
+            } else {
+                setCartItems([]);
+                setApiTotalPrice(0);
             }
 
-            // Load địa chỉ
-            const addressData = await AsyncStorage.getItem('addresses');
-            if (addressData) {
-                const addressList: Address[] = JSON.parse(addressData);
-                setAddresses(addressList);
+            // 2. LOAD ĐỊA CHỈ TỪ API
+            console.log('Fetching addresses...');
+            const addressList = await ApiService.getAddresses();
+            setAddresses(addressList);
 
-                // Tự động chọn địa chỉ mặc định
+            // Logic chọn địa chỉ mặc định
+            // Nếu chưa chọn địa chỉ nào HOẶC địa chỉ đang chọn không còn trong list mới
+            if (!selectedAddress || !addressList.find(a => a.id === selectedAddress.id)) {
                 const defaultAddr = addressList.find(a => a.isDefault);
                 if (defaultAddr) {
                     setSelectedAddress(defaultAddr);
+                } else if (addressList.length > 0) {
+                    setSelectedAddress(addressList[0]);
+                } else {
+                    setSelectedAddress(null);
                 }
             }
-        } catch (error) {
-            console.error('Error loading data:', error);
+
+        } catch (error: any) {
+            console.error('Error loading checkout data:', error);
+            // Alert.alert('Lỗi', 'Không thể tải dữ liệu'); // Có thể comment lại để đỡ phiền
         } finally {
             setLoading(false);
         }
@@ -82,13 +86,9 @@ export default function CheckoutScreen() {
         }).format(amount);
     };
 
-    const calculateTotal = () => {
-        return cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    };
-
-    const shippingFee = 30000; // 30k ship
-    const total = calculateTotal();
-    const finalTotal = total + shippingFee;
+    const shippingFee = 30000;
+    const totalProductPrice = apiTotalPrice;
+    const finalTotal = totalProductPrice + shippingFee;
 
     const handleSelectAddress = (address: Address) => {
         setSelectedAddress(address);
@@ -108,48 +108,30 @@ export default function CheckoutScreen() {
 
         Alert.alert(
             'Xác nhận đặt hàng',
-            `Tổng thanh toán: ${formatCurrency(finalTotal)}\nPhương thức: ${paymentMethod === 'cod' ? 'Thanh toán khi nhận hàng' :
-                paymentMethod === 'bank' ? 'Chuyển khoản ngân hàng' : 'Ví MoMo'
-            }`,
+            `Tổng thanh toán: ${formatCurrency(finalTotal)}\nĐịa chỉ: ${selectedAddress.address}`,
             [
                 { text: 'Hủy', style: 'cancel' },
                 {
                     text: 'Đặt hàng',
                     onPress: async () => {
                         try {
-                            // Tạo đơn hàng (sẽ call API sau)
-                            const order = {
-                                id: Date.now().toString(),
-                                items: cartItems,
-                                address: selectedAddress,
-                                paymentMethod,
-                                totalPrice: finalTotal,
-                                status: 'pending',
-                                createdAt: new Date().toISOString()
-                            };
+                            setLoading(true);
+                            // Gọi API đặt hàng thật ở đây (cần implement thêm trong ApiService)
+                            // const orderData = { addressId: selectedAddress.id, ... };
+                            // await ApiService.createOrder(orderData);
 
-                            // Lưu vào lịch sử đơn hàng
-                            const ordersData = await AsyncStorage.getItem('orders');
-                            const orders = ordersData ? JSON.parse(ordersData) : [];
-                            orders.unshift(order);
-                            await AsyncStorage.setItem('orders', JSON.stringify(orders));
-
-                            // Xóa giỏ hàng
-                            await AsyncStorage.removeItem('cart');
+                            // Tạm thời clear cart
+                            await ApiService.clearCart();
 
                             Alert.alert(
                                 'Đặt hàng thành công',
-                                'Đơn hàng của bạn đã được ghi nhận!',
-                                [
-                                    {
-                                        text: 'OK',
-                                        onPress: () => router.replace('/(tabs)/home')
-                                    }
-                                ]
+                                'Cảm ơn bạn đã mua hàng!',
+                                [{ text: 'OK', onPress: () => router.replace('/(tabs)/home') }]
                             );
                         } catch (error) {
-                            console.error('Error placing order:', error);
-                            Alert.alert('Lỗi', 'Không thể đặt hàng. Vui lòng thử lại');
+                            Alert.alert('Lỗi', 'Đặt hàng thất bại');
+                        } finally {
+                            setLoading(false);
                         }
                     }
                 }
@@ -157,12 +139,11 @@ export default function CheckoutScreen() {
         );
     };
 
-    if (loading) {
+    if (loading && cartItems.length === 0 && addresses.length === 0) {
         return (
             <SafeAreaView style={styles.container}>
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color="#2979ff" />
-                    <Text style={styles.loadingText}>Đang tải...</Text>
                 </View>
             </SafeAreaView>
         );
@@ -179,7 +160,7 @@ export default function CheckoutScreen() {
             </View>
 
             <ScrollView style={styles.content}>
-                {/* Địa chỉ giao hàng */}
+                {/* Phần địa chỉ */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Ionicons name="location" size={20} color="#2979ff" />
@@ -192,8 +173,9 @@ export default function CheckoutScreen() {
                             onPress={() => setShowAddressModal(true)}
                         >
                             <View style={styles.addressInfo}>
-                                <Text style={styles.addressName}>{selectedAddress.receiverName}</Text>
-                                <Text style={styles.addressPhone}>{selectedAddress.phone}</Text>
+                                <Text style={styles.addressName}>
+                                    {selectedAddress.receiverName} <Text style={{ fontWeight: 'normal', fontSize: 13 }}>({selectedAddress.phone})</Text>
+                                </Text>
                                 <Text style={styles.addressText}>{selectedAddress.address}</Text>
                             </View>
                             <Ionicons name="chevron-forward" size={20} color="#888" />
@@ -209,23 +191,22 @@ export default function CheckoutScreen() {
                     )}
                 </View>
 
-                {/* Sản phẩm */}
+                {/* Phần sản phẩm - Hiển thị từ API CartItem */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Ionicons name="cart" size={20} color="#2979ff" />
                         <Text style={styles.sectionTitle}>Sản phẩm ({cartItems.length})</Text>
                     </View>
-
                     {cartItems.map((item) => (
                         <View key={item.id} style={styles.productItem}>
                             <Image
-                                source={{ uri: item.image }}
+                                source={{ uri: item.product.image }}
                                 style={styles.productImage}
                                 resizeMode="contain"
                             />
                             <View style={styles.productInfo}>
                                 <Text style={styles.productName} numberOfLines={2}>
-                                    {item.name}
+                                    {item.product.name}
                                 </Text>
                                 <View style={styles.productPriceRow}>
                                     <Text style={styles.productPrice}>{formatCurrency(item.price)}</Text>
@@ -236,7 +217,6 @@ export default function CheckoutScreen() {
                     ))}
                 </View>
 
-                {/* Phương thức thanh toán */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Ionicons name="card" size={20} color="#2979ff" />
@@ -289,11 +269,11 @@ export default function CheckoutScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* Tổng tiền */}
+
                 <View style={styles.section}>
                     <View style={styles.priceRow}>
                         <Text style={styles.priceLabel}>Tạm tính:</Text>
-                        <Text style={styles.priceValue}>{formatCurrency(total)}</Text>
+                        <Text style={styles.priceValue}>{formatCurrency(totalProductPrice)}</Text>
                     </View>
                     <View style={styles.priceRow}>
                         <Text style={styles.priceLabel}>Phí vận chuyển:</Text>
@@ -316,7 +296,7 @@ export default function CheckoutScreen() {
                 </TouchableOpacity>
             </View>
 
-            {/* Modal chọn địa chỉ */}
+            {/* MODAL CHỌN ĐỊA CHỈ */}
             {showAddressModal && (
                 <View style={styles.modal}>
                     <View style={styles.modalContent}>
@@ -329,7 +309,7 @@ export default function CheckoutScreen() {
 
                         <FlatList
                             data={addresses}
-                            keyExtractor={(item) => item.id}
+                            keyExtractor={(item) => item.id.toString()}
                             renderItem={({ item }) => (
                                 <TouchableOpacity
                                     style={[
@@ -353,18 +333,25 @@ export default function CheckoutScreen() {
                                     )}
                                 </TouchableOpacity>
                             )}
+                            // ===============================================
+                            // THÊM PHẦN NÀY ĐỂ HIỂN THỊ NÚT THÊM ĐỊA CHỈ MỚI
+                            // KHI DANH SÁCH KHÔNG TRỐNG
+                            // ===============================================
+                            ListFooterComponent={
+                                <TouchableOpacity
+                                    style={styles.modalAddButton}
+                                    onPress={() => {
+                                        setShowAddressModal(false);
+                                        router.push('/address/form');
+                                    }}
+                                >
+                                    <Ionicons name="add-circle-outline" size={20} color="#2979ff" />
+                                    <Text style={styles.modalAddButtonText}>Thêm địa chỉ mới</Text>
+                                </TouchableOpacity>
+                            }
                             ListEmptyComponent={
                                 <View style={styles.emptyAddress}>
                                     <Text style={styles.emptyText}>Chưa có địa chỉ nào</Text>
-                                    <TouchableOpacity
-                                        style={styles.addButton}
-                                        onPress={() => {
-                                            setShowAddressModal(false);
-                                            router.push('/address/form');
-                                        }}
-                                    >
-                                        <Text style={styles.addButtonText}>Thêm địa chỉ mới</Text>
-                                    </TouchableOpacity>
                                 </View>
                             }
                         />
@@ -374,6 +361,7 @@ export default function CheckoutScreen() {
         </SafeAreaView>
     );
 }
+
 
 const styles = StyleSheet.create({
     container: {
@@ -687,6 +675,24 @@ const styles = StyleSheet.create({
     addButtonText: {
         color: 'white',
         fontSize: 14,
+        fontWeight: 'bold'
+    },
+    modalAddButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 15,
+        margin: 15,
+        backgroundColor: '#2b2b3b',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#2979ff',
+        borderStyle: 'dashed',
+        gap: 8
+    },
+    modalAddButtonText: {
+        color: '#2979ff',
+        fontSize: 15,
         fontWeight: 'bold'
     }
 });
