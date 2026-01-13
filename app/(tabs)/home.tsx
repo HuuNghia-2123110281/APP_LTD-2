@@ -296,7 +296,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={styles.favoriteBtn}
             onPress={(e) => {
-              e.stopPropagation(); // Ngăn chặn bấm vào cả thẻ card
+              e.stopPropagation();
               toggleFavorite(item);
             }}
           >
@@ -509,6 +509,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     color: 'white',
     fontSize: 24,
+    marginTop: 20,
     fontWeight: 'bold'
   },
   headerSubtitle: {
@@ -608,12 +609,12 @@ const styles = StyleSheet.create({
     color: '#888'
   },
 
-  // Style cho nút Yêu thích
+
   favoriteBtn: {
     position: 'absolute',
     top: 8,
     right: 8,
-    backgroundColor: 'rgba(255,255,255,0.9)', // Nền trắng mờ để nổi bật icon
+    backgroundColor: 'rgba(255,255,255,0.9)',
     width: 32,
     height: 32,
     borderRadius: 16,

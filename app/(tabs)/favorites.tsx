@@ -12,6 +12,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+// Đảm bảo đường dẫn import này đúng với project của bạn
 import { Product } from '../services/api';
 
 export default function FavoritesScreen() {
@@ -74,7 +75,7 @@ export default function FavoritesScreen() {
 
                 <TouchableOpacity
                     style={styles.cartBtn}
-                    onPress={() => router.push(`/product-detail?id=${item.id}`)} // Hoặc logic thêm giỏ hàng
+                    onPress={() => router.push(`/product-detail?id=${item.id}`)}
                 >
                     <Text style={styles.cartBtnText}>Mua ngay</Text>
                 </TouchableOpacity>
@@ -127,7 +128,12 @@ const styles = StyleSheet.create({
         borderBottomColor: '#333',
         alignItems: 'center'
     },
-    headerTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
+    headerTitle: {
+        color: 'white',
+        fontSize: 18,
+        fontWeight: 'bold',
+        marginTop: 20
+    },
     listContent: { padding: 15 },
     card: {
         flexDirection: 'row',

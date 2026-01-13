@@ -99,11 +99,11 @@ const styles = StyleSheet.create({
     width: 160,
     height: 160,
     borderRadius: 80,
-    backgroundColor: '#2b2b3b', // Màu nền tròn logo
+    backgroundColor: '#2b2b3b',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#2979ff', // Viền xanh Gaming
+    borderColor: '#2979ff',
     shadowColor: "#2979ff",
     shadowOffset: {
       width: 0,

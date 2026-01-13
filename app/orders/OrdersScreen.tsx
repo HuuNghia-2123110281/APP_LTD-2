@@ -38,6 +38,7 @@ interface ProcessedOrder {
     color: string;
     items: OrderDetailItem[];
     totalPrice: number;
+    estimatedDelivery: string;
 }
 
 export default function OrdersScreen() {
@@ -66,17 +67,26 @@ export default function OrdersScreen() {
                 const processedOrders = MOCK_ORDER_TEMPLATES.map(template => {
                     // Random số lượng loại sản phẩm (1 đến 4 loại)
                     const itemCount = Math.floor(Math.random() * 4) + 1;
-
+                    
                     // Tạo danh sách item ngẫu nhiên cho đơn hàng này
                     const orderItems = generateRandomItems(products, itemCount);
 
                     // Tính tổng tiền thật
                     const total = orderItems.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
 
+                    // Tính ngày giao hàng dự kiến (Ngày đặt + 5 ngày)
+                    const [day, month, year] = template.date.split('/').map(Number);
+                    const orderDateObj = new Date(year, month - 1, day);
+                    const deliveryDateObj = new Date(orderDateObj);
+                    deliveryDateObj.setDate(orderDateObj.getDate() + 5);
+                    
+                    const deliveryDateStr = `${deliveryDateObj.getDate().toString().padStart(2, '0')}/${(deliveryDateObj.getMonth() + 1).toString().padStart(2, '0')}/${deliveryDateObj.getFullYear()}`;
+
                     return {
                         ...template,
                         items: orderItems,
-                        totalPrice: total
+                        totalPrice: total,
+                        estimatedDelivery: deliveryDateStr // Lưu ngày giao hàng dự kiến
                     };
                 });
 
@@ -112,7 +122,7 @@ export default function OrdersScreen() {
     };
 
     const renderItem = ({ item }: { item: ProcessedOrder }) => (
-        <TouchableOpacity
+        <TouchableOpacity 
             style={styles.orderCard}
             onPress={() => handleOpenDetail(item)}
         >
@@ -163,7 +173,7 @@ export default function OrdersScreen() {
             {loading ? (
                 <View style={styles.centerContent}>
                     <ActivityIndicator size="large" color="#2979ff" />
-                    <Text style={{ color: '#888', marginTop: 10 }}>Đang tải đơn hàng...</Text>
+                    <Text style={{color: '#888', marginTop: 10}}>Đang tải đơn hàng...</Text>
                 </View>
             ) : (
                 <FlatList
@@ -200,7 +210,13 @@ export default function OrdersScreen() {
                             {/* Thông tin đơn hàng */}
                             <View style={styles.infoSection}>
                                 <Text style={styles.infoLabel}>Ngày đặt: <Text style={styles.infoValue}>{selectedOrder?.date}</Text></Text>
-                                <Text style={styles.infoLabel}>Trạng thái:
+                                
+                                {/* HIỂN THỊ NGÀY GIAO DỰ KIẾN */}
+                                {selectedOrder?.status !== 'Đã hủy' && (
+                                    <Text style={styles.infoLabel}>Dự kiến giao: <Text style={[styles.infoValue, {color: '#00e676'}]}>{selectedOrder?.estimatedDelivery}</Text></Text>
+                                )}
+
+                                <Text style={styles.infoLabel}>Trạng thái: 
                                     <Text style={[styles.infoValue, { color: selectedOrder?.color }]}> {selectedOrder?.status}</Text>
                                 </Text>
                                 <Text style={styles.infoLabel}>Địa chỉ nhận: <Text style={styles.infoValue}>123 Nguyễn Văn Linh, Đà Nẵng</Text></Text>
@@ -211,9 +227,9 @@ export default function OrdersScreen() {
                             {/* Danh sách items CỐ ĐỊNH của đơn hàng này */}
                             {selectedOrder?.items.map((item, index) => (
                                 <View key={index} style={styles.productItem}>
-                                    <Image
-                                        source={{ uri: item.product.image }}
-                                        style={styles.productImage}
+                                    <Image 
+                                        source={{ uri: item.product.image }} 
+                                        style={styles.productImage} 
                                         resizeMode="contain"
                                     />
                                     <View style={styles.productInfo}>
@@ -231,7 +247,7 @@ export default function OrdersScreen() {
                             ))}
 
                             <View style={styles.divider} />
-
+                            
                             {/* Tổng tiền khớp với bên ngoài */}
                             <View style={styles.totalRow}>
                                 <Text style={styles.totalLabel}>Tổng cộng</Text>
@@ -269,7 +285,8 @@ const styles = StyleSheet.create({
     headerTitle: {
         color: 'white',
         fontSize: 18,
-        fontWeight: 'bold'
+        fontWeight: 'bold',
+        marginTop: 20
     },
     listContent: {
         padding: 15

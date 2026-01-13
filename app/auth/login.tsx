@@ -227,6 +227,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderWidth: 2,
     borderColor: '#2979ff',
+    marginTop: 30
   },
   title: {
     fontSize: 34,
