@@ -1,7 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// LƯU Ý: Nếu bạn đang chạy Backend trên máy tính (Localhost) để test tính năng thanh toán mới,
+// hãy đổi URL này thành IP máy tính của bạn (ví dụ: http://192.168.1.5:8080/api).
+// Nếu Backend trên Railway đã được update code mới thì giữ nguyên.
 const API_URL = 'https://ltd-be-production.up.railway.app/api';
 
+// --- AUTH INTERFACES ---
 export interface RegisterRequest {
     fullName: string;
     email: string;
@@ -18,6 +22,7 @@ export interface AuthResponse {
     email: string;
 }
 
+// --- PRODUCT INTERFACES ---
 export interface Category {
     id: number;
     name: string;
@@ -37,6 +42,7 @@ export interface Product {
     category: Category;
 }
 
+// --- CART INTERFACES ---
 export interface CartItem {
     id: number;
     product: Product;
@@ -57,16 +63,41 @@ export interface AddToCartRequest {
     quantity: number;
 }
 
-export interface ErrorResponse {
-    message: string;
-}
-
+// --- ADDRESS INTERFACES ---
 export interface Address {
     id: number;
     receiverName: string;
     phone: string;
     address: string;
     isDefault: boolean;
+}
+
+export interface ErrorResponse {
+    message: string;
+}
+
+// --- ORDER & PAYMENT INTERFACES (MỚI) ---
+export interface OrderItem {
+    id: number;
+    productId: number;
+    quantity: number;
+    price: number;
+}
+
+export interface Order {
+    id: number;
+    totalPrice: number;
+    status: string; // PENDING, PAID, CANCELLED
+    paymentMethod: string;
+    createdAt: string;
+    items: OrderItem[];
+}
+
+export interface CreateOrderRequest {
+    addressId: number;
+    paymentMethod: string; // TCB, MOMO, ZALOPAY, COD
+    totalPrice: number;    
+    items: { productId: number; quantity: number }[];
 }
 
 class ApiService {
@@ -80,7 +111,7 @@ class ApiService {
     private async getToken(): Promise<string | null> {
         try {
             const token = await AsyncStorage.getItem('userToken');
-            console.log('Retrieved token:', token ? `${token.substring(0, 20)}...` : 'null');
+            // console.log('Retrieved token:', token ? `${token.substring(0, 20)}...` : 'null');
             return token;
         } catch (error) {
             console.error('Error getting token:', error);
@@ -107,7 +138,6 @@ class ApiService {
 
     private validateImageUrl(url: string | null | undefined): string | null {
         if (!url) return null;
-
         try {
             const urlObj = new URL(url);
             return urlObj.href;
@@ -123,7 +153,9 @@ class ApiService {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    // ============================================================
     // AUTH APIs
+    // ============================================================
     async register(data: RegisterRequest): Promise<{ message: string }> {
         try {
             console.log('Registering user:', data.email);
@@ -141,9 +173,7 @@ class ApiService {
 
             return result;
         } catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            }
+            if (error instanceof Error) throw error;
             throw new Error('Network error occurred');
         }
     }
@@ -169,9 +199,7 @@ class ApiService {
 
             return result;
         } catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            }
+            if (error instanceof Error) throw error;
             throw new Error('Network error occurred');
         }
     }
@@ -200,7 +228,9 @@ class ApiService {
         }
     }
 
+    // ============================================================
     // PRODUCT APIs
+    // ============================================================
     async getProducts(search?: string): Promise<Product[]> {
         try {
             let url = `${this.baseUrl}/products`;
@@ -224,9 +254,7 @@ class ApiService {
                 image: this.validateImageUrl(product.image)
             }));
         } catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            }
+            if (error instanceof Error) throw error;
             throw new Error('Network error occurred');
         }
     }
@@ -248,9 +276,7 @@ class ApiService {
                 image: this.validateImageUrl(product.image)
             };
         } catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            }
+            if (error instanceof Error) throw error;
             throw new Error('Network error occurred');
         }
     }
@@ -273,14 +299,14 @@ class ApiService {
                 image: this.validateImageUrl(product.image)
             }));
         } catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            }
+            if (error instanceof Error) throw error;
             throw new Error('Network error occurred');
         }
     }
 
+    // ============================================================
     // CATEGORY APIs
+    // ============================================================
     async getCategories(): Promise<Category[]> {
         try {
             const response = await fetch(`${this.baseUrl}/categories`, {
@@ -299,9 +325,7 @@ class ApiService {
                 image: this.validateImageUrl(category.image)
             }));
         } catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            }
+            if (error instanceof Error) throw error;
             throw new Error('Network error occurred');
         }
     }
@@ -323,26 +347,23 @@ class ApiService {
                 image: this.validateImageUrl(category.image)
             };
         } catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            }
+            if (error instanceof Error) throw error;
             throw new Error('Network error occurred');
         }
     }
 
-    // CART APIs - FIXED TO USE /cart-items
+    // ============================================================
+    // CART APIs
+    // ============================================================
     async getCart(): Promise<CartResponse> {
         try {
-            console.log('Fetching cart items from API...');
+            // console.log('Fetching cart items from API...');
             const headers = await this.getHeaders(true);
 
-            // USE CORRECT ENDPOINT: /cart-items instead of /cart
             const response = await fetch(`${this.baseUrl}/cart-items`, {
                 method: 'GET',
                 headers: headers,
             });
-
-            console.log('Cart items response status:', response.status);
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -351,15 +372,13 @@ class ApiService {
             }
 
             const cartItems: CartItem[] = await response.json();
-            console.log('Raw cart items response:', JSON.stringify(cartItems, null, 2));
+            // console.log('Raw cart items response:', JSON.stringify(cartItems, null, 2));
 
-            // Calculate totals from cart items
             const totalItems = cartItems.length;
             const totalPrice = cartItems.reduce((sum, item) => {
                 return sum + (item.price * item.quantity);
             }, 0);
 
-            // Extract cart ID from first item (if exists)
             const cartId = cartItems.length > 0 ? cartItems[0].cart?.id || null : null;
 
             const result: CartResponse = {
@@ -369,13 +388,10 @@ class ApiService {
                 totalPrice: totalPrice
             };
 
-            console.log('Processed cart response:', JSON.stringify(result, null, 2));
             return result;
         } catch (error) {
             console.error('getCart error:', error);
-            if (error instanceof Error) {
-                throw error;
-            }
+            if (error instanceof Error) throw error;
             throw new Error('Network error occurred');
         }
     }
@@ -391,33 +407,23 @@ class ApiService {
                 body: JSON.stringify(data),
             });
 
-            console.log('Add to cart response status:', response.status);
             const result = await response.json();
-            console.log('Add to cart response:', JSON.stringify(result, null, 2));
 
             if (!response.ok) {
                 throw new Error(result.message || 'Failed to add to cart');
             }
 
-            // RETRY MECHANISM: Wait and verify cart multiple times
-            console.log('Verifying cart update with retry mechanism...');
+            // RETRY MECHANISM
+            // console.log('Verifying cart update with retry mechanism...');
             let attempts = 0;
             let cartHasItems = false;
 
             while (attempts < this.maxRetries && !cartHasItems) {
                 attempts++;
-                console.log(`Retry attempt ${attempts}/${this.maxRetries}...`);
-
                 await this.delay(800 * attempts);
-
                 const cartCheck = await this.getCart();
-                console.log(`Cart check #${attempts}:`, JSON.stringify(cartCheck, null, 2));
-
                 if (cartCheck.items && cartCheck.items.length > 0) {
                     cartHasItems = true;
-                    console.log('✅ Cart verified successfully!');
-                } else {
-                    console.log(`⚠️ Cart still empty after attempt ${attempts}`);
                 }
             }
 
@@ -427,9 +433,7 @@ class ApiService {
             };
         } catch (error) {
             console.error('addToCart error:', error);
-            if (error instanceof Error) {
-                throw error;
-            }
+            if (error instanceof Error) throw error;
             throw new Error('Network error occurred');
         }
     }
@@ -450,12 +454,9 @@ class ApiService {
             }
 
             await this.delay(500);
-
             return result;
         } catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            }
+            if (error instanceof Error) throw error;
             throw new Error('Network error occurred');
         }
     }
@@ -475,12 +476,9 @@ class ApiService {
             }
 
             await this.delay(500);
-
             return result;
         } catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            }
+            if (error instanceof Error) throw error;
             throw new Error('Network error occurred');
         }
     }
@@ -501,12 +499,15 @@ class ApiService {
 
             return result;
         } catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            }
+            if (error instanceof Error) throw error;
             throw new Error('Network error occurred');
         }
-    } async getAddresses(): Promise<Address[]> {
+    }
+
+    // ============================================================
+    // ADDRESS APIs
+    // ============================================================
+    async getAddresses(): Promise<Address[]> {
         try {
             const response = await fetch(`${this.baseUrl}/addresses`, {
                 method: 'GET',
@@ -564,6 +565,53 @@ class ApiService {
         } catch (error) {
             console.error('deleteAddress error:', error);
             throw error;
+        }
+    }
+
+    // ============================================================
+    // ORDER & PAYMENT APIs (MỚI)
+    // ============================================================
+
+    // 1. Tạo đơn hàng (Trạng thái PENDING)
+    async createOrder(data: CreateOrderRequest): Promise<Order> {
+        try {
+            console.log('Creating order:', JSON.stringify(data, null, 2));
+            const response = await fetch(`${this.baseUrl}/orders`, {
+                method: 'POST',
+                headers: await this.getHeaders(true),
+                body: JSON.stringify(data),
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || 'Failed to create order');
+            }
+
+            return result;
+        } catch (error) {
+            console.error('createOrder error:', error);
+            if (error instanceof Error) throw error;
+            throw new Error('Network error occurred');
+        }
+    }
+
+    // 2. Lấy chi tiết đơn hàng (Dùng để polling kiểm tra trạng thái)
+    async getOrderDetail(orderId: number): Promise<Order> {
+        try {
+            const response = await fetch(`${this.baseUrl}/orders/${orderId}`, {
+                method: 'GET',
+                headers: await this.getHeaders(true),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch order detail');
+            }
+
+            return await response.json();
+        } catch (error) {
+            if (error instanceof Error) throw error;
+            throw new Error('Network error occurred');
         }
     }
 }
