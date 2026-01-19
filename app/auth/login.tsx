@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image, // <--- NHỚ IMPORT IMAGE
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -58,7 +59,6 @@ export default function LoginScreen() {
         password,
       });
 
-      // Đăng nhập thành công
       Alert.alert(
         'Thành công!',
         'Đăng nhập thành công',
@@ -70,7 +70,6 @@ export default function LoginScreen() {
         ]
       );
     } catch (error) {
-      // Hiển thị lỗi
       Alert.alert(
         'Đăng nhập thất bại',
         error instanceof Error ? error.message : 'Có lỗi xảy ra, vui lòng thử lại'
@@ -89,9 +88,16 @@ export default function LoginScreen() {
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {/* Header */}
           <View style={styles.header}>
+            {/* === SỬA LOGO TẠI ĐÂY === */}
             <View style={styles.logoContainer}>
-              <Ionicons name="laptop" size={44} color="#2979ff" />
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
+            {/* ======================= */}
+            
             <Text style={styles.title}>NghiaShop</Text>
             <Text style={styles.subtitle}>Đăng nhập để tiếp tục mua sắm</Text>
           </View>
@@ -218,8 +224,8 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   logoContainer: {
-    width: 90,
-    height: 90,
+    width: 100, // Tăng nhẹ kích thước
+    height: 100,
     borderRadius: 24,
     backgroundColor: '#1e1e2e',
     justifyContent: 'center',
@@ -228,6 +234,11 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#2979ff',
     marginTop: 30
+  },
+  // Style mới cho ảnh logo
+  logoImage: {
+    width: '70%',
+    height: '70%',
   },
   title: {
     fontSize: 34,

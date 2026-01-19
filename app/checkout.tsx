@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'; // Dùng useFocusEffect
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
     ActivityIndicator,
@@ -40,9 +40,6 @@ export default function CheckoutScreen() {
 
     const loadData = async () => {
         try {
-            // Chỉ hiện loading lần đầu hoặc khi cần thiết, ở đây mình set nhẹ để UX mượt hơn
-            // setLoading(true); 
-
             // 1. LOAD GIỎ HÀNG
             const cartResponse = await ApiService.getCart();
             if (cartResponse && cartResponse.items) {
@@ -59,7 +56,6 @@ export default function CheckoutScreen() {
             setAddresses(addressList);
 
             // Logic chọn địa chỉ mặc định
-            // Nếu chưa chọn địa chỉ nào HOẶC địa chỉ đang chọn không còn trong list mới
             if (!selectedAddress || !addressList.find(a => a.id === selectedAddress.id)) {
                 const defaultAddr = addressList.find(a => a.isDefault);
                 if (defaultAddr) {
@@ -73,7 +69,6 @@ export default function CheckoutScreen() {
 
         } catch (error: any) {
             console.error('Error loading checkout data:', error);
-            // Alert.alert('Lỗi', 'Không thể tải dữ liệu'); // Có thể comment lại để đỡ phiền
         } finally {
             setLoading(false);
         }
@@ -95,17 +90,35 @@ export default function CheckoutScreen() {
         setShowAddressModal(false);
     };
 
+    // --- HÀM XỬ LÝ ĐẶT HÀNG ĐÃ SỬA ĐỔI ---
     const handlePlaceOrder = async () => {
+        // 1. Kiểm tra địa chỉ
         if (!selectedAddress) {
             Alert.alert('Thiếu thông tin', 'Vui lòng chọn địa chỉ giao hàng');
             return;
         }
 
+        // 2. Kiểm tra giỏ hàng
         if (cartItems.length === 0) {
             Alert.alert('Giỏ hàng trống', 'Không có sản phẩm để đặt hàng');
             return;
         }
 
+        // 3. Xử lý Chuyển khoản ngân hàng (Bank Transfer)
+        if (paymentMethod === 'bank') {
+            // Chuyển sang màn hình thanh toán QR kèm theo thông tin số tiền và ID địa chỉ
+            router.push({
+                pathname: '/payment/payment-qr',
+                params: {
+                    amount: finalTotal,                 // Tổng tiền cần thanh toán
+                    addressId: selectedAddress.id,      // ID địa chỉ giao hàng
+                    note: 'Thanh toan don hang'         // Nội dung chuyển khoản
+                }
+            });
+            return; // Dừng hàm tại đây
+        }
+
+        // 4. Xử lý Thanh toán khi nhận hàng (COD)
         Alert.alert(
             'Xác nhận đặt hàng',
             `Tổng thanh toán: ${formatCurrency(finalTotal)}\nĐịa chỉ: ${selectedAddress.address}`,
@@ -252,21 +265,6 @@ export default function CheckoutScreen() {
                             <Ionicons name="checkmark-circle" size={24} color="#2979ff" />
                         )}
                     </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[styles.paymentOption, paymentMethod === 'momo' && styles.paymentOptionActive]}
-                        onPress={() => setPaymentMethod('momo')}
-                    >
-                        <View style={styles.paymentContent}>
-                            <Ionicons name="wallet-outline" size={24} color={paymentMethod === 'momo' ? '#2979ff' : '#888'} />
-                            <Text style={[styles.paymentText, paymentMethod === 'momo' && styles.paymentTextActive]}>
-                                Ví MoMo
-                            </Text>
-                        </View>
-                        {paymentMethod === 'momo' && (
-                            <Ionicons name="checkmark-circle" size={24} color="#2979ff" />
-                        )}
-                    </TouchableOpacity>
                 </View>
 
 
@@ -333,10 +331,6 @@ export default function CheckoutScreen() {
                                     )}
                                 </TouchableOpacity>
                             )}
-                            // ===============================================
-                            // THÊM PHẦN NÀY ĐỂ HIỂN THỊ NÚT THÊM ĐỊA CHỈ MỚI
-                            // KHI DANH SÁCH KHÔNG TRỐNG
-                            // ===============================================
                             ListFooterComponent={
                                 <TouchableOpacity
                                     style={styles.modalAddButton}
