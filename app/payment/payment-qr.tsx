@@ -1,116 +1,123 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Image,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
+} from 'react-native';
 import ApiService from '../services/api';
 
 const PAYMENT_METHODS = [
     {
         id: 'TCB',
         name: 'Techcombank',
-        // logo: require('../../assets/images/logo-tcb.png'), // Mở comment nếu đã có ảnh
+        // Nếu bạn chưa có logo thì để comment lại, dùng icon mặc định
+        // logo: require('../../assets/images/logo-tcb.png'), 
         color: '#e60019', 
         getDynamicUrl: (amount: number) => 
             `https://img.vietqr.io/image/TCB-50977451512-compact.png?amount=${amount}&addInfo=Thanh toan don hang`,
-        staticImage: require('../../assets/images/QR-TCB.jpg'), // Đảm bảo có ảnh này
+        staticImage: require('../../assets/images/QR-TCB.jpg'),
         appLink: 'App Ngân hàng'
     },
-    // Thêm các phương thức khác nếu cần...
+    {
+        id: 'MOMO',
+        name: 'MoMo',
+        color: '#a50064', 
+        getDynamicUrl: (amount: number) => null, // Momo không có dynamic link public
+        staticImage: require('../../assets/images/QR-MOMO.jpg'), // Đảm bảo bạn có ảnh này hoặc đổi thành QR-TCB.jpg để test tạm
+        appLink: 'App MoMo'
+    }
 ];
 
 export default function PaymentQRScreen() {
     const router = useRouter();
     const params = useLocalSearchParams();
     
-    // Lấy dữ liệu truyền từ Checkout
+    // Lấy dữ liệu từ Checkout truyền sang
     const orderId = params.orderId ? Number(params.orderId) : null;
     const amount = params.amount ? Number(params.amount) : 0;
-    const initialMethod = params.methodId ? String(params.methodId) : 'TCB';
+    const methodId = params.methodId ? String(params.methodId) : 'TCB';
 
-    const [timeLeft, setTimeLeft] = useState(300); // 5 phút
+    const [timeLeft, setTimeLeft] = useState(600); // 10 phút đếm ngược
     const [imageError, setImageError] = useState(false);
-    
-    // Ref để quản lý vòng lặp kiểm tra
-    const intervalRef = useRef<NodeJS.Timeout | null>(null);
+    const [loading, setLoading] = useState(false);
 
-    const currentMethod = PAYMENT_METHODS.find(m => m.id === initialMethod) || PAYMENT_METHODS[0];
+    // Tìm phương thức thanh toán tương ứng
+    const currentMethod = PAYMENT_METHODS.find(m => m.id === methodId) || PAYMENT_METHODS[0];
 
-    // 1. Đếm ngược thời gian
+    // Đếm ngược thời gian
     useEffect(() => {
-        if (timeLeft === 0) {
-            stopPolling();
-            Alert.alert("Hết giờ", "Giao dịch đã hết hạn.", [{ text: "Về Home", onPress: () => router.replace('/(tabs)/home') }]);
-            return;
-        }
+        if (timeLeft === 0) return;
         const timer = setInterval(() => setTimeLeft(p => p - 1), 1000);
         return () => clearInterval(timer);
     }, [timeLeft]);
 
-    // 2. POLLING: Tự động kiểm tra trạng thái mỗi 3 giây
-    useEffect(() => {
-        if (!orderId) return;
-
-        const checkStatus = async () => {
-            try {
-                // Gọi API lấy chi tiết đơn hàng
-                const order = await ApiService.getOrderDetail(orderId);
-                console.log(`Checking Order #${orderId}: Status = ${order.status}`);
-
-                if (order.status === 'PAID') {
-                    stopPolling();
-                    handleSuccess();
-                }
-            } catch (error) {
-                // Lỗi mạng thì bỏ qua, đợi lần check sau
-            }
-        };
-
-        // Bắt đầu vòng lặp
-        intervalRef.current = setInterval(checkStatus, 3000);
-
-        // Dọn dẹp khi thoát màn hình
-        return () => stopPolling();
-    }, [orderId]);
-
-    const stopPolling = () => {
-        if (intervalRef.current) {
-            clearInterval(intervalRef.current);
-            intervalRef.current = null;
+    // HÀM XỬ LÝ KHI BẤM NÚT "TÔI ĐÃ CHUYỂN KHOẢN"
+    const handleConfirmPayment = async () => {
+        if (!orderId) {
+            Alert.alert("Lỗi", "Không tìm thấy mã đơn hàng.");
+            return;
         }
-    };
 
-    const handleSuccess = async () => {
-        // Xóa giỏ hàng (vì đã thanh toán xong)
-        await ApiService.clearCart();
-        
-        Alert.alert(
-            "✅ THANH TOÁN THÀNH CÔNG!", 
-            "Cảm ơn bạn đã mua hàng. Đơn hàng đang được xử lý.", 
-            [{ text: "OK", onPress: () => router.replace('/(tabs)/home') }]
-        );
+        try {
+            setLoading(true);
+
+            // 1. Gọi API báo cho Backend biết đã thanh toán
+            // Backend sẽ update trạng thái đơn hàng này thành PAID
+            await ApiService.confirmPayment(orderId);
+
+            // 2. Xóa giỏ hàng (vì đã mua xong)
+            await ApiService.clearCart();
+
+            // 3. Thông báo thành công và về trang chủ
+            Alert.alert(
+                "✅ Thành công", 
+                "Hệ thống đã ghi nhận thanh toán của bạn.", 
+                [{ text: "Về trang chủ", onPress: () => router.replace('/(tabs)/home') }]
+            );
+
+        } catch (error) {
+            console.error(error);
+            Alert.alert("Lỗi", "Có lỗi xảy ra khi xác nhận. Vui lòng thử lại.");
+        } finally {
+            setLoading(false);
+        }
     };
 
     const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
     
-    // Xử lý hiển thị QR
+    // Xử lý link ảnh QR
     const dynamicUrl = currentMethod.getDynamicUrl ? currentMethod.getDynamicUrl(amount) : null;
+    // Nếu link dynamic lỗi hoặc không có -> Dùng ảnh tĩnh (staticImage)
     const showStatic = !dynamicUrl || imageError;
-    const qrSource = showStatic ? currentMethod.staticImage : { uri: dynamicUrl };
+    const qrSource = showStatic ? currentMethod.staticImage : { uri: dynamicUrl || '' };
 
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color="white" /></TouchableOpacity>
+                <TouchableOpacity onPress={() => router.back()}>
+                    <Ionicons name="arrow-back" size={24} color="white" />
+                </TouchableOpacity>
                 <Text style={styles.title}>Thanh toán QR</Text>
                 <View style={{ width: 24 }} />
             </View>
 
-            <ScrollView contentContainerStyle={{padding: 20, alignItems: 'center'}}>
+            <ScrollView contentContainerStyle={{padding: 20, alignItems: 'center', paddingBottom: 100}}>
                 <Text style={styles.bankName}>{currentMethod.name}</Text>
+                
+                <Text style={styles.label}>Tổng tiền cần thanh toán</Text>
                 <Text style={[styles.amount, { color: currentMethod.color }]}>
                     {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount)}
                 </Text>
 
+                {/* KHUNG QR CODE */}
                 <View style={styles.qrFrame}>
                     <Image 
                         source={qrSource} 
@@ -120,20 +127,30 @@ export default function PaymentQRScreen() {
                     />
                 </View>
 
-                {/* VÒNG XOAY ĐANG CHỜ */}
-                <View style={styles.loadingBox}>
-                    <ActivityIndicator size="small" color="#2979ff" />
-                    <Text style={{color: 'white', marginLeft: 10}}>Đang chờ xác nhận từ ngân hàng...</Text>
+                <Text style={styles.timer}>Giao dịch kết thúc sau: <Text style={{fontWeight: 'bold', color: '#ff5252'}}>{formatTime(timeLeft)}</Text></Text>
+
+                <View style={styles.instructBox}>
+                    <Text style={styles.instructTitle}>HƯỚNG DẪN:</Text>
+                    <Text style={styles.instructText}>1. Mở App {currentMethod.appLink}</Text>
+                    <Text style={styles.instructText}>2. Quét mã QR ở trên để chuyển khoản</Text>
+                    <Text style={styles.instructText}>3. Sau khi chuyển xong, bấm nút xác nhận bên dưới</Text>
                 </View>
-
-                <Text style={styles.timer}>Hết hạn trong: <Text style={{fontWeight: 'bold', color: '#ff5252'}}>{formatTime(timeLeft)}</Text></Text>
-
-                <Text style={styles.instruct}>
-                    1. Mở App {currentMethod.appLink}{"\n"}
-                    2. Quét mã QR ở trên{"\n"}
-                    3. Hệ thống sẽ <Text style={{fontWeight: 'bold', color: '#00e676'}}>tự động xác nhận</Text> ngay khi nhận được tiền.
-                </Text>
             </ScrollView>
+
+            {/* NÚT BẤM XÁC NHẬN THỦ CÔNG */}
+            <View style={styles.footer}>
+                <TouchableOpacity 
+                    style={[styles.confirmBtn, { backgroundColor: currentMethod.color }]} 
+                    onPress={handleConfirmPayment}
+                    disabled={loading}
+                >
+                    {loading ? (
+                        <ActivityIndicator color="white" />
+                    ) : (
+                        <Text style={styles.btnText}>TÔI ĐÃ CHUYỂN KHOẢN XONG</Text>
+                    )}
+                </TouchableOpacity>
+            </View>
         </SafeAreaView>
     );
 }
@@ -142,11 +159,16 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#121212' },
     header: { flexDirection: 'row', padding: 20, justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderColor: '#333' },
     title: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-    bankName: { color: 'white', fontSize: 20, fontWeight: 'bold', marginTop: 10 },
-    amount: { fontSize: 32, fontWeight: 'bold', marginVertical: 15 },
-    qrFrame: { padding: 15, backgroundColor: 'white', borderRadius: 15, elevation: 5 },
+    bankName: { color: 'white', fontSize: 22, fontWeight: 'bold', marginTop: 10 },
+    label: { color: '#aaa', marginTop: 5, fontSize: 14 },
+    amount: { fontSize: 32, fontWeight: 'bold', marginBottom: 20, marginTop: 5 },
+    qrFrame: { padding: 15, backgroundColor: 'white', borderRadius: 16, elevation: 5 },
     qrImage: { width: 250, height: 250 },
-    loadingBox: { flexDirection: 'row', backgroundColor: '#2b2b3b', padding: 12, borderRadius: 20, marginTop: 30, alignItems: 'center', paddingHorizontal: 20 },
-    timer: { color: '#aaa', marginTop: 20, fontSize: 16 },
-    instruct: { color: '#888', textAlign: 'center', marginTop: 30, lineHeight: 24 }
+    timer: { color: '#aaa', marginTop: 25, fontSize: 16 },
+    instructBox: { marginTop: 30, backgroundColor: '#1e1e2e', padding: 20, borderRadius: 12, width: '100%' },
+    instructTitle: { color: '#fff', fontWeight: 'bold', marginBottom: 10 },
+    instructText: { color: '#ccc', marginBottom: 6, lineHeight: 22 },
+    footer: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20, backgroundColor: '#1e1e1e', borderTopWidth: 1, borderColor: '#333' },
+    confirmBtn: { padding: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+    btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 }
 });

@@ -1,8 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// LƯU Ý: Nếu bạn đang chạy Backend trên máy tính (Localhost) để test tính năng thanh toán mới,
-// hãy đổi URL này thành IP máy tính của bạn (ví dụ: http://192.168.1.5:8080/api).
-// Nếu Backend trên Railway đã được update code mới thì giữ nguyên.
+// LƯU Ý: Nếu Railway đã Active xanh lá thì dùng link này.
+// Nếu chưa, hãy đổi về IP máy tính (http://192.168.1.x:8080/api)
 const API_URL = 'https://ltd-be-production.up.railway.app/api';
 
 // --- AUTH INTERFACES ---
@@ -21,6 +20,14 @@ export interface AuthResponse {
     token: string;
     email: string;
 }
+
+// --- CẬP NHẬT: THÊM TRƯỜNG OTP ---
+export interface ResetPasswordRequest {
+    email: string;
+    otp: string;           // <--- BẮT BUỘC PHẢI CÓ
+    newPassword: string;
+}
+// ----------------------------------
 
 // --- PRODUCT INTERFACES ---
 export interface Category {
@@ -76,7 +83,7 @@ export interface ErrorResponse {
     message: string;
 }
 
-// --- ORDER & PAYMENT INTERFACES (MỚI) ---
+// --- ORDER & PAYMENT INTERFACES ---
 export interface OrderItem {
     id: number;
     productId: number;
@@ -111,7 +118,6 @@ class ApiService {
     private async getToken(): Promise<string | null> {
         try {
             const token = await AsyncStorage.getItem('userToken');
-            // console.log('Retrieved token:', token ? `${token.substring(0, 20)}...` : 'null');
             return token;
         } catch (error) {
             console.error('Error getting token:', error);
@@ -203,6 +209,53 @@ class ApiService {
             throw new Error('Network error occurred');
         }
     }
+
+    // --- 1. API GỬI OTP (MỚI) ---
+    async sendOtp(email: string): Promise<{ message: string }> {
+        try {
+            console.log('Sending OTP to:', email);
+            const response = await fetch(`${this.baseUrl}/auth/send-otp`, {
+                method: 'POST',
+                headers: await this.getHeaders(),
+                body: JSON.stringify({ email }),
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || 'Gửi OTP thất bại');
+            }
+
+            return result;
+        } catch (error) {
+            if (error instanceof Error) throw error;
+            throw new Error('Lỗi kết nối mạng');
+        }
+    }
+
+    // --- 2. API ĐỔI MẬT KHẨU KÈM OTP (CẬP NHẬT) ---
+    async resetPassword(data: ResetPasswordRequest): Promise<{ message: string }> {
+        try {
+            console.log('Resetting password for:', data.email);
+            const response = await fetch(`${this.baseUrl}/auth/reset-password`, {
+                method: 'POST',
+                headers: await this.getHeaders(),
+                body: JSON.stringify(data),
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || 'Đặt lại mật khẩu thất bại');
+            }
+
+            return result;
+        } catch (error) {
+            if (error instanceof Error) throw error;
+            throw new Error('Network error occurred');
+        }
+    }
+    // ----------------------------------------------
 
     async logout(): Promise<void> {
         try {
@@ -357,7 +410,6 @@ class ApiService {
     // ============================================================
     async getCart(): Promise<CartResponse> {
         try {
-            // console.log('Fetching cart items from API...');
             const headers = await this.getHeaders(true);
 
             const response = await fetch(`${this.baseUrl}/cart-items`, {
@@ -372,7 +424,6 @@ class ApiService {
             }
 
             const cartItems: CartItem[] = await response.json();
-            // console.log('Raw cart items response:', JSON.stringify(cartItems, null, 2));
 
             const totalItems = cartItems.length;
             const totalPrice = cartItems.reduce((sum, item) => {
@@ -414,7 +465,6 @@ class ApiService {
             }
 
             // RETRY MECHANISM
-            // console.log('Verifying cart update with retry mechanism...');
             let attempts = 0;
             let cartHasItems = false;
 
@@ -569,10 +619,8 @@ class ApiService {
     }
 
     // ============================================================
-    // ORDER & PAYMENT APIs (MỚI)
+    // ORDER & PAYMENT APIs
     // ============================================================
-
-    // 1. Tạo đơn hàng (Trạng thái PENDING)
     async createOrder(data: CreateOrderRequest): Promise<Order> {
         try {
             console.log('Creating order:', JSON.stringify(data, null, 2));
@@ -596,7 +644,28 @@ class ApiService {
         }
     }
 
-    // 2. Lấy chi tiết đơn hàng (Dùng để polling kiểm tra trạng thái)
+    async confirmPayment(orderId: number): Promise<{ message: string; status: string }> {
+        try {
+            console.log(`Confirming payment for Order ID: ${orderId}`);
+            const response = await fetch(`${this.baseUrl}/payment/confirm/${orderId}`, {
+                method: 'PUT',
+                headers: await this.getHeaders(true),
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || 'Failed to confirm payment');
+            }
+
+            return result;
+        } catch (error) {
+            console.error('confirmPayment error:', error);
+            if (error instanceof Error) throw error;
+            throw new Error('Network error occurred');
+        }
+    }
+
     async getOrderDetail(orderId: number): Promise<Order> {
         try {
             const response = await fetch(`${this.baseUrl}/orders/${orderId}`, {
