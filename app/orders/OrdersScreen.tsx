@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
     Image,
     Modal,
@@ -14,151 +15,154 @@ import {
     View
 } from 'react-native';
 
-// Import ApiService và Interface Product
-import ApiService, { Product } from '../services/api';
-
-// 1. Chỉ giữ lại khung sườn thông tin (bỏ total và itemsCount cứng đi)
-const MOCK_ORDER_TEMPLATES = [
-    { id: 'ORD-8821', date: '12/01/2026', status: 'Đang giao', color: '#2979ff' },
-    { id: 'ORD-9923', date: '05/01/2026', status: 'Hoàn thành', color: '#00e676' },
-    { id: 'ORD-1102', date: '28/12/2025', status: 'Đã hủy', color: '#ff5252' },
-    { id: 'ORD-5541', date: '20/12/2025', status: 'Hoàn thành', color: '#00e676' },
-];
-
-interface OrderDetailItem {
-    product: Product;
-    quantity: number;
-}
-
-// Interface cho đơn hàng đã được xử lý (có items và total thật)
-interface ProcessedOrder {
-    id: string;
-    date: string;
-    status: string;
-    color: string;
-    items: OrderDetailItem[];
-    totalPrice: number;
-    estimatedDelivery: string;
-}
+import ApiService, { OrderDetail } from '../services/api';
 
 export default function OrdersScreen() {
     const router = useRouter();
 
-    // State lưu danh sách đơn hàng ĐÃ ĐƯỢC TÍNH TOÁN
-    const [orders, setOrders] = useState<ProcessedOrder[]>([]);
+    const [orders, setOrders] = useState<OrderDetail[]>([]);
     const [loading, setLoading] = useState(true);
 
     // State cho Modal
     const [modalVisible, setModalVisible] = useState(false);
-    const [selectedOrder, setSelectedOrder] = useState<ProcessedOrder | null>(null);
+    const [selectedOrder, setSelectedOrder] = useState<OrderDetail | null>(null);
 
-    useEffect(() => {
-        initData();
-    }, []);
+    useFocusEffect(
+        useCallback(() => {
+            initData();
+        }, [])
+    );
 
     const initData = async () => {
         try {
             setLoading(true);
-            // 1. Lấy danh sách sản phẩm thật từ API
-            const products = await ApiService.getProducts();
+            const ordersFromApi = await ApiService.getOrders();
 
-            if (products.length > 0) {
-                // 2. Tạo đơn hàng hoàn chỉnh từ Template + Sản phẩm thật
-                const processedOrders = MOCK_ORDER_TEMPLATES.map(template => {
-                    // Random số lượng loại sản phẩm (1 đến 4 loại)
-                    const itemCount = Math.floor(Math.random() * 4) + 1;
-                    
-                    // Tạo danh sách item ngẫu nhiên cho đơn hàng này
-                    const orderItems = generateRandomItems(products, itemCount);
+            const sortedOrders = ordersFromApi.sort((a, b) => {
+                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            });
 
-                    // Tính tổng tiền thật
-                    const total = orderItems.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
-
-                    // Tính ngày giao hàng dự kiến (Ngày đặt + 5 ngày)
-                    const [day, month, year] = template.date.split('/').map(Number);
-                    const orderDateObj = new Date(year, month - 1, day);
-                    const deliveryDateObj = new Date(orderDateObj);
-                    deliveryDateObj.setDate(orderDateObj.getDate() + 5);
-                    
-                    const deliveryDateStr = `${deliveryDateObj.getDate().toString().padStart(2, '0')}/${(deliveryDateObj.getMonth() + 1).toString().padStart(2, '0')}/${deliveryDateObj.getFullYear()}`;
-
-                    return {
-                        ...template,
-                        items: orderItems,
-                        totalPrice: total,
-                        estimatedDelivery: deliveryDateStr // Lưu ngày giao hàng dự kiến
-                    };
-                });
-
-                setOrders(processedOrders);
-            }
+            setOrders(sortedOrders);
         } catch (error) {
-            console.log('Lỗi khởi tạo dữ liệu:', error);
+            console.log('Lỗi tải đơn hàng:', error);
+
+            if (error instanceof Error) {
+                if (error.message.includes('Access denied')) {
+                    // Có thể hiển thị alert hoặc toast
+                    Alert.alert(
+                        'Không thể tải đơn hàng',
+                        'Bạn chưa có quyền xem đơn hàng. Vui lòng liên hệ hỗ trợ.',
+                        [{ text: 'OK' }]
+                    );
+                }
+            }
+
+            // Giữ orders là mảng rỗng
+            setOrders([]);
         } finally {
             setLoading(false);
         }
-    };
-
-    // Hàm helper: Chọn ngẫu nhiên items từ danh sách gốc
-    const generateRandomItems = (sourceProducts: Product[], count: number): OrderDetailItem[] => {
-        // Clone và xáo trộn
-        const shuffled = [...sourceProducts].sort(() => 0.5 - Math.random());
-        // Lấy số lượng cần thiết
-        const selected = shuffled.slice(0, Math.min(count, sourceProducts.length));
-
-        return selected.map(p => ({
-            product: p,
-            quantity: Math.floor(Math.random() * 3) + 1 // Random số lượng 1-3
-        }));
     };
 
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
     };
 
-    const handleOpenDetail = (order: ProcessedOrder) => {
-        setSelectedOrder(order); // Dữ liệu đã có sẵn items và total, không cần tính lại
-        setModalVisible(true);
+    const handleOpenDetail = async (order: OrderDetail) => {
+        try {
+            setModalVisible(true);
+            setSelectedOrder(order); // Hiển thị dữ liệu tạm thời
+
+            // Gọi API lấy chi tiết đầy đủ
+            const fullOrderDetail = await ApiService.getOrderDetail(order.id);
+            setSelectedOrder(fullOrderDetail);
+
+            console.log('📦 Loaded order detail:', {
+                orderId: fullOrderDetail.id,
+                itemCount: fullOrderDetail.items?.length,
+                items: fullOrderDetail.items?.map(item => ({
+                    productId: item.productId,
+                    productName: item.productName,
+                    productImage: item.productImage,
+                    quantity: item.quantity,
+                    price: item.price
+                }))
+            });
+        } catch (error) {
+            console.error('Error loading order detail:', error);
+            Alert.alert('Lỗi', 'Không thể tải chi tiết đơn hàng');
+        }
     };
 
-    const renderItem = ({ item }: { item: ProcessedOrder }) => (
-        <TouchableOpacity 
-            style={styles.orderCard}
-            onPress={() => handleOpenDetail(item)}
-        >
-            <View style={styles.cardHeader}>
-                <View style={styles.orderIdContainer}>
-                    <Ionicons name="cube-outline" size={18} color="#aaa" />
-                    <Text style={styles.orderId}>{item.id}</Text>
-                </View>
-                <Text style={styles.orderDate}>{item.date}</Text>
-            </View>
+    const getStatusColor = (status: string | null | undefined) => {
+        if (!status) return '#888';
 
-            <View style={styles.divider} />
+        switch (status.toUpperCase()) {
+            case 'PENDING': return '#ff9800';
+            case 'PAID': return '#00e676';
+            case 'COMPLETED': return '#4caf50';
+            case 'CANCELLED': return '#ff5252';
+            default: return '#2979ff';
+        }
+    };
 
-            <View style={styles.cardBody}>
-                <View>
-                    <Text style={styles.label}>Tổng tiền</Text>
-                    {/* Hiển thị giá tiền thật đã tính */}
-                    <Text style={styles.totalPrice}>{formatCurrency(item.totalPrice)}</Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={styles.label}>Số lượng</Text>
-                    <Text style={styles.itemCount}>{item.items.length} sản phẩm</Text>
-                </View>
-            </View>
+    const getStatusText = (status: string | null | undefined) => {
+        if (!status) return 'Không rõ';
 
-            <View style={styles.cardFooter}>
-                <View style={[styles.statusBadge, { backgroundColor: item.color + '20' }]}>
-                    <Text style={[styles.statusText, { color: item.color }]}>{item.status}</Text>
+        switch (status.toUpperCase()) {
+            case 'PENDING': return 'Chờ thanh toán';
+            case 'PAID': return 'Đã thanh toán';
+            case 'COMPLETED': return 'Hoàn thành';
+            case 'CANCELLED': return 'Đã hủy';
+            default: return status;
+        }
+    };
+
+    const renderItem = ({ item }: { item: OrderDetail }) => {
+        const itemCount = item.items?.length || 0;
+
+        return (
+            <TouchableOpacity
+                style={styles.orderCard}
+                onPress={() => handleOpenDetail(item)}
+            >
+                <View style={styles.cardHeader}>
+                    <View style={styles.orderIdContainer}>
+                        <Ionicons name="cube-outline" size={18} color="#aaa" />
+                        <Text style={styles.orderId}>ORD-{item.id}</Text>
+                    </View>
+                    <Text style={styles.orderDate}>
+                        {new Date(item.createdAt).toLocaleDateString('vi-VN')}
+                    </Text>
                 </View>
-                <View style={styles.detailsBtn}>
-                    <Text style={styles.detailsText}>Xem chi tiết</Text>
-                    <Ionicons name="chevron-forward" size={14} color="#aaa" />
+
+                <View style={styles.divider} />
+
+                <View style={styles.cardBody}>
+                    <View>
+                        <Text style={styles.label}>Tổng tiền</Text>
+                        <Text style={styles.totalPrice}>{formatCurrency(item.totalPrice)}</Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={styles.label}>Số lượng</Text>
+                        <Text style={styles.itemCount}>{itemCount} sản phẩm</Text>
+                    </View>
                 </View>
-            </View>
-        </TouchableOpacity>
-    );
+
+                <View style={styles.cardFooter}>
+                    <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
+                        <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
+                            {getStatusText(item.status)}
+                        </Text>
+                    </View>
+                    <View style={styles.detailsBtn}>
+                        <Text style={styles.detailsText}>Xem chi tiết</Text>
+                        <Ionicons name="chevron-forward" size={14} color="#aaa" />
+                    </View>
+                </View>
+            </TouchableOpacity>
+        );
+    };
 
     return (
         <SafeAreaView style={styles.container}>
@@ -173,12 +177,12 @@ export default function OrdersScreen() {
             {loading ? (
                 <View style={styles.centerContent}>
                     <ActivityIndicator size="large" color="#2979ff" />
-                    <Text style={{color: '#888', marginTop: 10}}>Đang tải đơn hàng...</Text>
+                    <Text style={{ color: '#888', marginTop: 10 }}>Đang tải đơn hàng...</Text>
                 </View>
             ) : (
                 <FlatList
                     data={orders}
-                    keyExtractor={(item) => item.id}
+                    keyExtractor={(item) => item.id.toString()}
                     renderItem={renderItem}
                     contentContainerStyle={styles.listContent}
                     ListEmptyComponent={
@@ -200,7 +204,7 @@ export default function OrdersScreen() {
                 <View style={styles.modalContainer}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Chi tiết {selectedOrder?.id}</Text>
+                            <Text style={styles.modalTitle}>Chi tiết ORD-{selectedOrder?.id}</Text>
                             <TouchableOpacity onPress={() => setModalVisible(false)}>
                                 <Ionicons name="close" size={24} color="white" />
                             </TouchableOpacity>
@@ -209,36 +213,45 @@ export default function OrdersScreen() {
                         <ScrollView style={styles.modalBody}>
                             {/* Thông tin đơn hàng */}
                             <View style={styles.infoSection}>
-                                <Text style={styles.infoLabel}>Ngày đặt: <Text style={styles.infoValue}>{selectedOrder?.date}</Text></Text>
-                                
-                                {/* HIỂN THỊ NGÀY GIAO DỰ KIẾN */}
-                                {selectedOrder?.status !== 'Đã hủy' && (
-                                    <Text style={styles.infoLabel}>Dự kiến giao: <Text style={[styles.infoValue, {color: '#00e676'}]}>{selectedOrder?.estimatedDelivery}</Text></Text>
-                                )}
-
-                                <Text style={styles.infoLabel}>Trạng thái: 
-                                    <Text style={[styles.infoValue, { color: selectedOrder?.color }]}> {selectedOrder?.status}</Text>
+                                <Text style={styles.infoLabel}>
+                                    Ngày đặt:
+                                    <Text style={styles.infoValue}>
+                                        {' '}{selectedOrder ? new Date(selectedOrder.createdAt).toLocaleDateString('vi-VN') : ''}
+                                    </Text>
                                 </Text>
-                                <Text style={styles.infoLabel}>Địa chỉ nhận: <Text style={styles.infoValue}>123 Nguyễn Văn Linh, Đà Nẵng</Text></Text>
+
+                                <Text style={styles.infoLabel}>
+                                    Trạng thái:
+                                    <Text style={[styles.infoValue, {
+                                        color: selectedOrder ? getStatusColor(selectedOrder.status) : '#fff'
+                                    }]}>
+                                        {' '}{selectedOrder ? getStatusText(selectedOrder.status) : ''}
+                                    </Text>
+                                </Text>
+
+                                <Text style={styles.infoLabel}>
+                                    Phương thức:
+                                    <Text style={styles.infoValue}> {selectedOrder?.paymentMethod || 'COD'}</Text>
+                                </Text>
                             </View>
 
                             <Text style={styles.sectionHeader}>Danh sách sản phẩm</Text>
 
-                            {/* Danh sách items CỐ ĐỊNH của đơn hàng này */}
+                            {/* Hiển thị items với thông tin đầy đủ từ API */}
                             {selectedOrder?.items.map((item, index) => (
                                 <View key={index} style={styles.productItem}>
-                                    <Image 
-                                        source={{ uri: item.product.image }} 
-                                        style={styles.productImage} 
+                                    <Image
+                                        source={{ uri: item.productImage || 'https://via.placeholder.com/60' }}
+                                        style={styles.productImage}
                                         resizeMode="contain"
                                     />
                                     <View style={styles.productInfo}>
                                         <Text style={styles.productName} numberOfLines={2}>
-                                            {item.product.name}
+                                            {item.productName}
                                         </Text>
                                         <View style={styles.productRow}>
                                             <Text style={styles.productPrice}>
-                                                {formatCurrency(item.product.price)}
+                                                {formatCurrency(item.price)}
                                             </Text>
                                             <Text style={styles.productQuantity}>x{item.quantity}</Text>
                                         </View>
@@ -247,8 +260,7 @@ export default function OrdersScreen() {
                             ))}
 
                             <View style={styles.divider} />
-                            
-                            {/* Tổng tiền khớp với bên ngoài */}
+
                             <View style={styles.totalRow}>
                                 <Text style={styles.totalLabel}>Tổng cộng</Text>
                                 <Text style={styles.totalValue}>
@@ -263,6 +275,7 @@ export default function OrdersScreen() {
     );
 }
 
+// STYLES GIỮ NGUYÊN NHƯ CŨ
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -285,8 +298,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         color: 'white',
         fontSize: 18,
-        fontWeight: 'bold',
-        marginTop: 20
+        fontWeight: 'bold'
     },
     listContent: {
         padding: 15
@@ -377,7 +389,6 @@ const styles = StyleSheet.create({
         marginTop: 10,
         fontSize: 16
     },
-    // Styles Modal
     modalContainer: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.8)',

@@ -1,7 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// LƯU Ý: Nếu Railway đã Active xanh lá thì dùng link này.
-// Nếu chưa, hãy đổi về IP máy tính (http://192.168.1.x:8080/api)
 const API_URL = 'https://ltd-be-production.up.railway.app/api';
 
 // --- AUTH INTERFACES ---
@@ -21,13 +19,11 @@ export interface AuthResponse {
     email: string;
 }
 
-// --- CẬP NHẬT: THÊM TRƯỜNG OTP ---
 export interface ResetPasswordRequest {
     email: string;
-    otp: string;           // <--- BẮT BUỘC PHẢI CÓ
+    otp: string;
     newPassword: string;
 }
-// ----------------------------------
 
 // --- PRODUCT INTERFACES ---
 export interface Category {
@@ -94,17 +90,68 @@ export interface OrderItem {
 export interface Order {
     id: number;
     totalPrice: number;
-    status: string; // PENDING, PAID, CANCELLED
+    status: string;
     paymentMethod: string;
     createdAt: string;
     items: OrderItem[];
 }
 
+export interface OrderItemDetail {
+    id: number;
+    productId: number;
+    productName: string;
+    productImage: string;
+    quantity: number;
+    price: number;
+}
+
+export interface OrderDetail {
+    id: number;
+    totalPrice: number;
+    status: string;
+    paymentMethod: string;
+    createdAt: string;
+    items: OrderItemDetail[];
+}
+
 export interface CreateOrderRequest {
     addressId: number;
-    paymentMethod: string; // TCB, MOMO, ZALOPAY, COD
-    totalPrice: number;    
-    items: { productId: number; quantity: number }[];
+    paymentMethod: string;
+    totalPrice: number;
+    items: {
+        productId: number;
+        quantity: number;
+        price?: number;
+    }[];
+}
+
+export interface CreatePaymentRequest {
+    orderId: number;
+    amount?: number;
+    returnUrl?: string;
+    cancelUrl?: string;
+    expiredAt?: number;
+}
+
+export interface CreatePaymentResponse {
+    success: boolean;
+    paymentUrl?: string;
+    qrCode?: string; // QR code URL từ PayOS
+    orderCode?: number;
+    orderId?: number;
+    amount?: number;
+    error?: string;
+}
+
+export interface VerifyPaymentResponse {
+    success: boolean;
+    orderId: number;
+    orderCode: number;
+    isPaid: boolean;
+    status: string;
+    totalPrice: number;
+    paymentMethod: string;
+    error?: string;
 }
 
 class ApiService {
@@ -210,11 +257,11 @@ class ApiService {
         }
     }
 
-    // --- 1. API GỬI OTP (MỚI) ---
     async sendOtp(email: string): Promise<{ message: string }> {
         try {
             console.log('Sending OTP to:', email);
-            const response = await fetch(`${this.baseUrl}/auth/send-otp`, {
+            // SỬA: Endpoint đổi thành /auth/forgot-password cho khớp với Backend Controller
+            const response = await fetch(`${this.baseUrl}/auth/forgot-password`, {
                 method: 'POST',
                 headers: await this.getHeaders(),
                 body: JSON.stringify({ email }),
@@ -233,14 +280,22 @@ class ApiService {
         }
     }
 
-    // --- 2. API ĐỔI MẬT KHẨU KÈM OTP (CẬP NHẬT) ---
+    // 2. Xác nhận OTP và Đổi mật khẩu
     async resetPassword(data: ResetPasswordRequest): Promise<{ message: string }> {
         try {
             console.log('Resetting password for:', data.email);
+
+            // SỬA: Backend Java đang mong đợi field "token" thay vì "otp"
+            // Ta map lại dữ liệu trước khi gửi
+            const payload = {
+                token: data.otp, // Map 'otp' từ UI sang 'token' cho Backend
+                newPassword: data.newPassword
+            };
+
             const response = await fetch(`${this.baseUrl}/auth/reset-password`, {
                 method: 'POST',
                 headers: await this.getHeaders(),
-                body: JSON.stringify(data),
+                body: JSON.stringify(payload),
             });
 
             const result = await response.json();
@@ -255,7 +310,6 @@ class ApiService {
             throw new Error('Network error occurred');
         }
     }
-    // ----------------------------------------------
 
     async logout(): Promise<void> {
         try {
@@ -464,7 +518,6 @@ class ApiService {
                 throw new Error(result.message || 'Failed to add to cart');
             }
 
-            // RETRY MECHANISM
             let attempts = 0;
             let cartHasItems = false;
 
@@ -623,7 +676,12 @@ class ApiService {
     // ============================================================
     async createOrder(data: CreateOrderRequest): Promise<Order> {
         try {
-            console.log('Creating order:', JSON.stringify(data, null, 2));
+            console.log('📤 Creating order with full details:');
+            console.log('- Address ID:', data.addressId);
+            console.log('- Payment Method:', data.paymentMethod);
+            console.log('- Total Price:', data.totalPrice);
+            console.log('- Items:', JSON.stringify(data.items, null, 2));
+
             const response = await fetch(`${this.baseUrl}/orders`, {
                 method: 'POST',
                 headers: await this.getHeaders(true),
@@ -633,12 +691,14 @@ class ApiService {
             const result = await response.json();
 
             if (!response.ok) {
+                console.error('❌ Order creation failed:', result);
                 throw new Error(result.message || 'Failed to create order');
             }
 
+            console.log('✅ Order created successfully:', result);
             return result;
         } catch (error) {
-            console.error('createOrder error:', error);
+            console.error('❌ createOrder error:', error);
             if (error instanceof Error) throw error;
             throw new Error('Network error occurred');
         }
@@ -666,23 +726,143 @@ class ApiService {
         }
     }
 
-    async getOrderDetail(orderId: number): Promise<Order> {
+    async createPayment(data: CreatePaymentRequest): Promise<CreatePaymentResponse> {
         try {
+            console.log('Creating PayOS payment:', data);
+            const response = await fetch(`${this.baseUrl}/payment/create`, {
+                method: 'POST',
+                headers: await this.getHeaders(true),
+                body: JSON.stringify(data),
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to create payment');
+            }
+
+            // PayOS trả về QR code URL trong field "qrCode"
+            console.log('✅ Payment response:', result);
+
+            return result;
+        } catch (error) {
+            console.error('createPayment error:', error);
+            if (error instanceof Error) throw error;
+            throw new Error('Network error occurred');
+        }
+    }
+
+    async verifyPayment(orderCode: number): Promise<VerifyPaymentResponse> {
+        try {
+            console.log('Verifying payment:', orderCode);
+            const response = await fetch(`${this.baseUrl}/payment/verify/${orderCode}`, {
+                method: 'GET',
+                headers: await this.getHeaders(true),
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to verify payment');
+            }
+
+            return result;
+        } catch (error) {
+            console.error('verifyPayment error:', error);
+            if (error instanceof Error) throw error;
+            throw new Error('Network error occurred');
+        }
+    }
+
+    async getPaymentHistory(orderId: number): Promise<any> {
+        try {
+            const response = await fetch(`${this.baseUrl}/payment/history/${orderId}`, {
+                method: 'GET',
+                headers: await this.getHeaders(true),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to get payment history');
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('getPaymentHistory error:', error);
+            if (error instanceof Error) throw error;
+            throw new Error('Network error occurred');
+        }
+    }
+
+    async getOrders(): Promise<OrderDetail[]> {
+        try {
+            const headers = await this.getHeaders(true);
+            console.log('🔍 Fetching orders with headers:', headers);
+
+            const response = await fetch(`${this.baseUrl}/orders`, {
+                method: 'GET',
+                headers: headers,
+            });
+
+            console.log('📡 Response status:', response.status);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ Error response:', errorText);
+                throw new Error(`Failed to fetch orders: ${response.status} - ${errorText}`);
+            }
+
+            const orders = await response.json();
+            console.log('✅ Orders fetched:', orders);
+
+            return orders.map((order: OrderDetail) => ({
+                ...order,
+                items: order.items.map(item => ({
+                    ...item,
+                    productImage: this.validateImageUrl(item.productImage) || ''
+                }))
+            }));
+        } catch (error) {
+            console.error('💥 getOrders error:', error);
+            if (error instanceof Error) throw error;
+            throw new Error('Network error occurred');
+        }
+    }
+
+    async getOrderDetail(orderId: number): Promise<OrderDetail> {
+        try {
+            console.log(`🔍 Fetching order detail for ID: ${orderId}`);
+
             const response = await fetch(`${this.baseUrl}/orders/${orderId}`, {
                 method: 'GET',
                 headers: await this.getHeaders(true),
             });
 
             if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ Order detail error:', errorText);
                 throw new Error('Failed to fetch order detail');
             }
 
-            return await response.json();
+            const order = await response.json();
+
+            console.log('📦 Raw order data:', order);
+            console.log('📦 Order items:', order.items);
+
+            return {
+                ...order,
+                items: order.items.map((item: OrderItemDetail) => ({
+                    ...item,
+                    productImage: this.validateImageUrl(item.productImage) || 'https://via.placeholder.com/60'
+                }))
+            };
         } catch (error) {
+            console.error('💥 getOrderDetail error:', error);
             if (error instanceof Error) throw error;
             throw new Error('Network error occurred');
         }
     }
+
+
 }
 
 export default new ApiService();

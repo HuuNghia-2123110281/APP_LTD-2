@@ -18,40 +18,71 @@ export default function CartScreen() {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalPrice, setTotalPrice] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchCart = async () => {
     try {
       setLoading(true);
-      console.log('=== FETCHING CART ===');
+      console.log('=== 🛒 FETCHING CART ===');
 
       const response = await ApiService.getCart();
 
-      console.log('Cart API Response:', JSON.stringify(response, null, 2));
+      console.log('📦 Cart API Response:', {
+        hasItems: !!response?.items,
+        itemCount: response?.items?.length || 0,
+        totalPrice: response?.totalPrice || 0,
+        cartId: response?.cartId
+      });
 
-      // Response should now be CartResponse with items array
+      // Log chi tiết từng item
+      if (response?.items && response.items.length > 0) {
+        console.log('📋 Cart Items Detail:');
+        response.items.forEach((item, index) => {
+          console.log(`  ${index + 1}. ${item.product.name}`, {
+            cartItemId: item.id,
+            productId: item.product.id,
+            quantity: item.quantity,
+            price: item.price,
+            subtotal: item.price * item.quantity,
+            stock: item.product.stock
+          });
+        });
+      }
+
       if (response && response.items) {
         setCartItems(response.items);
         setTotalPrice(response.totalPrice);
-        console.log(`✅ Loaded ${response.items.length} items, total: ${response.totalPrice}`);
+        console.log(`✅ Cart loaded successfully: ${response.items.length} items, total: ${response.totalPrice.toLocaleString('vi-VN')}₫`);
       } else {
         setCartItems([]);
         setTotalPrice(0);
-        console.log('⚠️ No items in cart');
+        console.log('⚠️ Cart is empty');
       }
     } catch (error: any) {
-      console.error('Error fetching cart:', error);
+      console.error('❌ Error fetching cart:', error);
+      console.error('Error details:', {
+        message: error.message,
+        name: error.name,
+        stack: error.stack
+      });
       Alert.alert('Lỗi', error.message || 'Không thể tải giỏ hàng');
       setCartItems([]);
       setTotalPrice(0);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
   useFocusEffect(
     useCallback(() => {
-      console.log('Cart screen focused - reloading cart');
+      console.log('👁️ Cart screen focused - reloading cart');
       fetchCart();
+
+      // Cleanup function
+      return () => {
+        console.log('👋 Cart screen unfocused');
+      };
     }, [])
   );
 
@@ -65,19 +96,24 @@ export default function CartScreen() {
   const updateQuantity = async (cartItemId: number, currentQuantity: number, change: number) => {
     const newQuantity = currentQuantity + change;
 
-    console.log(`Updating quantity: itemId=${cartItemId}, from ${currentQuantity} to ${newQuantity}`);
+    console.log(`🔄 Updating quantity:`, {
+      cartItemId,
+      from: currentQuantity,
+      to: newQuantity,
+      change
+    });
 
     if (newQuantity < 1) {
-      console.log('Cannot set quantity below 1');
+      console.log('⚠️ Cannot set quantity below 1');
       return;
     }
 
     try {
       await ApiService.updateCartItem(cartItemId, newQuantity);
-      console.log('Quantity updated successfully, reloading cart...');
+      console.log('✅ Quantity updated successfully, reloading cart...');
       await fetchCart();
     } catch (error: any) {
-      console.error('Error updating quantity:', error);
+      console.error('❌ Error updating quantity:', error);
       Alert.alert('Lỗi', error.message || 'Không thể cập nhật giỏ hàng');
     }
   };
@@ -93,13 +129,13 @@ export default function CartScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log(`Removing item: ${cartItemId}`);
+              console.log(`🗑️ Removing item: ${cartItemId}`);
               await ApiService.removeFromCart(cartItemId);
-              console.log('Item removed, reloading cart...');
+              console.log('✅ Item removed successfully, reloading cart...');
               await fetchCart();
-              Alert.alert('Thành công', 'Đã xóa sản phẩm');
+              Alert.alert('Thành công', 'Đã xóa sản phẩm khỏi giỏ hàng');
             } catch (error: any) {
-              console.error('Error removing item:', error);
+              console.error('❌ Error removing item:', error);
               Alert.alert('Lỗi', error.message || 'Không thể xóa sản phẩm');
             }
           }
@@ -114,11 +150,26 @@ export default function CartScreen() {
       return;
     }
 
-    console.log('Proceeding to checkout with', cartItems.length, 'items');
+    console.log('💳 Proceeding to checkout:', {
+      itemCount: cartItems.length,
+      totalPrice: totalPrice,
+      items: cartItems.map(item => ({
+        productId: item.product.id,
+        productName: item.product.name,
+        quantity: item.quantity,
+        price: item.price
+      }))
+    });
+
     router.push('/checkout');
   };
 
-  if (loading) {
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchCart();
+  };
+
+  if (loading && !refreshing) {
     return (
       <View style={[styles.container, styles.centerContent]}>
         <ActivityIndicator size="large" color="#2979ff" />
@@ -148,6 +199,8 @@ export default function CartScreen() {
           <FlatList
             data={cartItems}
             keyExtractor={(item) => item.id.toString()}
+            onRefresh={handleRefresh}
+            refreshing={refreshing}
             renderItem={({ item }) => (
               <View style={styles.item}>
                 <Image
@@ -182,6 +235,13 @@ export default function CartScreen() {
                       <Ionicons name="add" size={16} color="#fff" />
                     </TouchableOpacity>
                   </View>
+
+                  {/* Hiển thị stock warning */}
+                  {item.product.stock < item.quantity && (
+                    <Text style={styles.stockWarning}>
+                      ⚠️ Chỉ còn {item.product.stock} sản phẩm
+                    </Text>
+                  )}
                 </View>
                 <TouchableOpacity
                   style={styles.deleteButton}
@@ -196,6 +256,9 @@ export default function CartScreen() {
                 <Text style={styles.listHeaderText}>
                   Giỏ hàng ({cartItems.length} sản phẩm)
                 </Text>
+                <TouchableOpacity onPress={handleRefresh}>
+                  <Ionicons name="refresh" size={20} color="#2979ff" />
+                </TouchableOpacity>
               </View>
             }
           />
@@ -204,8 +267,12 @@ export default function CartScreen() {
               <Text style={styles.totalLabel}>Tổng cộng:</Text>
               <Text style={styles.totalText}>{formatCurrency(totalPrice)}</Text>
             </View>
-            <TouchableOpacity style={styles.checkoutButton} onPress={handleCheckout}>
+            <TouchableOpacity
+              style={styles.checkoutButton}
+              onPress={handleCheckout}
+            >
               <Text style={styles.checkoutText}>Thanh toán ngay</Text>
+              <Ionicons name="arrow-forward" size={20} color="#121212" />
             </TouchableOpacity>
           </View>
         </>
@@ -259,6 +326,9 @@ const styles = StyleSheet.create({
     fontSize: 16
   },
   listHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 15,
     backgroundColor: '#1e1e1e',
     marginBottom: 5
@@ -323,6 +393,11 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     fontSize: 16
   },
+  stockWarning: {
+    color: '#ff9800',
+    fontSize: 11,
+    marginTop: 4
+  },
   deleteButton: {
     justifyContent: 'center',
     paddingLeft: 8
@@ -352,7 +427,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#00e676',
     padding: 16,
     borderRadius: 12,
-    alignItems: 'center'
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8
   },
   checkoutText: {
     color: '#121212',

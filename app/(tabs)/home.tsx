@@ -162,11 +162,43 @@ export default function HomeScreen() {
       ]);
       return;
     }
+
     try {
       setAddingToCart(item.id);
-      await ApiService.addToCart({ productId: item.id, quantity: 1 });
-      Alert.alert("✅ Thành công", `Đã thêm "${item.name}" vào giỏ hàng!`);
+
+      // 🔍 1. Kiểm tra giỏ hàng hiện tại
+      console.log('🔍 Checking if product exists in cart...');
+      const currentCart = await ApiService.getCart();
+
+      // 🔍 2. Tìm sản phẩm đã tồn tại trong giỏ
+      const existingItem = currentCart.items?.find(
+        cartItem => cartItem.product.id === item.id
+      );
+
+      if (existingItem) {
+        // ✅ 3. Nếu đã có -> Tăng số lượng
+        console.log(`✅ Product exists in cart (cartItemId: ${existingItem.id}), updating quantity...`);
+        const newQuantity = existingItem.quantity + 1;
+
+        await ApiService.updateCartItem(existingItem.id, newQuantity);
+
+        Alert.alert(
+          "✅ Đã cập nhật",
+          `Số lượng "${item.name}" trong giỏ hàng: ${newQuantity}`
+        );
+      } else {
+        // ➕ 4. Nếu chưa có -> Thêm mới
+        console.log(`➕ Product not in cart, adding new item...`);
+        await ApiService.addToCart({ productId: item.id, quantity: 1 });
+
+        Alert.alert(
+          "✅ Thành công",
+          `Đã thêm "${item.name}" vào giỏ hàng!`
+        );
+      }
+
     } catch (error: any) {
+      console.error('❌ Error adding to cart:', error);
       Alert.alert("❌ Lỗi", error.message || "Không thể thêm vào giỏ hàng.");
     } finally {
       setAddingToCart(null);
@@ -197,7 +229,7 @@ export default function HomeScreen() {
               <Ionicons name="image-outline" size={48} color="#555" />
             </View>
           )}
-          
+
           <TouchableOpacity
             style={styles.favoriteBtn}
             onPress={(e) => { e.stopPropagation(); toggleFavorite(item); }}
@@ -216,7 +248,7 @@ export default function HomeScreen() {
           <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
           <Text style={styles.category}>{item.category?.name || 'Chưa phân loại'}</Text>
           <Text style={styles.price}>{formatCurrency(item.price)}</Text>
-          
+
           <View style={styles.ratingRow}>
             <Text style={styles.star}>⭐ {item.rating?.toFixed(1) || 'N/A'}</Text>
             <Text style={styles.sold}>Đã bán {item.sold || 0}</Text>
@@ -227,7 +259,7 @@ export default function HomeScreen() {
             onPress={(e) => { e.stopPropagation(); onAddToCart(item); }}
             disabled={item.stock <= 0 || isAddingThisProduct}
           >
-            {isAddingThisProduct ? <ActivityIndicator size="small" color="#fff" /> : 
+            {isAddingThisProduct ? <ActivityIndicator size="small" color="#fff" /> :
               <Text style={styles.addButtonText}>{item.stock > 0 ? 'Thêm vào giỏ' : 'Hết hàng'}</Text>}
           </TouchableOpacity>
         </View>
@@ -329,7 +361,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#121212' },
   centerLoading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   headerContainer: { padding: 20, backgroundColor: '#1e1e1e', borderBottomLeftRadius: 20, borderBottomRightRadius: 20 },
-  
+
   // === STYLE MỚI CHO LOGO ===
   headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, marginTop: 10 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
